@@ -1,6 +1,11 @@
 # HuMidi
-#### (formerly Midi2Key. Way too many Midi2Keys out there..)
-MIDI2Key includes various humanization options for a natural, human-like playback. Including automatic pedal timing and 88-key keyboard support. Easy to run via executable or source code, with GUI support included.
+##### (formerly Midi2Key. Way too many Midi2Keys out there..)
+
+### You can download this from the releases or from Sourceforge: [![Download HuMidi](https://img.shields.io/sourceforge/dw/humidi-roblox-piano-autoplayer.svg)](https://sourceforge.net/projects/humidi-roblox-piano-autoplayer/files/latest/download)
+
+
+## About HuMidi
+HuMidi includes various humanization options for a natural, human-like playback. Including automatic pedal timing and 88-key keyboard support. Easy to run via executable or source code, with GUI support included.
 
 
 <img width="326" height="396" alt="Midi2Key / HuMidi v1.3 Playback tab" src="https://github.com/user-attachments/assets/c9d39ad9-0517-4ea6-acb3-da312868aaed" />
