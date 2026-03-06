@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 import sys
 import os
+import bisect
 from PyQt6.QtWidgets import QApplication, QMainWindow, QMessageBox, QFileDialog, QDialog
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QIcon
@@ -35,8 +36,9 @@ class MainWindow(QMainWindow):
         # Global Application States
         self.loaded_save_data = None
         self.loaded_save_filename = None
-        self.selected_tracks_info = None 
-        self.current_notes = [] 
+        self.selected_tracks_info = None
+        self.current_notes = []
+        self._note_start_times = []
         self.total_song_duration_sec = 1.0
 
         self._bind_signals()
@@ -45,7 +47,7 @@ class MainWindow(QMainWindow):
         loaded_cfg = self.config_manager.load()
         if loaded_cfg:
             self.ui.load_config_to_ui(loaded_cfg, self.config_manager.save_dir)
-            self.ui.hk_label.setText(f"Start/Stop Hotkey: {self.hotkey_manager._format_key_string(self.hotkey_manager.current_key)}")
+            self.ui.hk_label.setText(f"Hotkey: {self.hotkey_manager._format_key_string(self.hotkey_manager.current_key)}")
         else:
             self.ui.reset_controls_to_default()
 
@@ -63,6 +65,13 @@ class MainWindow(QMainWindow):
         # View manipulations bound to Window behavior
         self.ui.always_top_check.toggled.connect(self._toggle_always_on_top)
         self.ui.opacity_slider.valueChanged.connect(self._change_opacity)
+
+        # Settings-tab persistence — save immediately on change so closing without playing doesn't lose them
+        self.ui.always_top_check.toggled.connect(self._save_config)
+        self.ui.opacity_slider.valueChanged.connect(self._save_config)
+        self.ui.timeline_vis_check.toggled.connect(self._save_config)
+        self.ui.piano_vis_check.toggled.connect(self._save_config)
+        self.ui.use_ai_pedal_check.toggled.connect(self._save_config)
 
         # Timeline logic bridging
         self.ui.timeline_widget.seek_requested.connect(self._on_timeline_seek)
@@ -112,31 +121,28 @@ class MainWindow(QMainWindow):
         QMessageBox.information(self, "Bind Key", "Press the key you want to bind now.")
 
     def _on_hotkey_bound(self, key_str):
-        self.ui.hk_label.setText(f"Start/Stop Hotkey: {key_str}")
+        self.ui.hk_label.setText(f"Hotkey: {key_str}")
         self.ui.hk_btn.setText("Change")
         self.ui.hk_btn.setEnabled(True)
-        self._update_play_stop_labels()
+        self._sync_play_button()
 
-    def _update_play_stop_labels(self):
-        key_str = self.hotkey_manager._format_key_string(self.hotkey_manager.current_key)
-        if not self.playback_controller.is_playing() and not self.playback_controller.is_paused(): 
-            self.ui.play_button.setText(f"Play ({key_str})")
-        self.ui.stop_button.setText(f"Stop")
-
-    def _update_pause_ui_state(self):
+    def _sync_play_button(self):
+        """Single authoritative update for the play button label, derived from current playback state."""
         key_str = self.hotkey_manager._format_key_string(self.hotkey_manager.current_key)
         if self.playback_controller.is_paused():
             self.ui.play_button.setText(f"Resume ({key_str})")
-        else:
+        elif self.playback_controller.is_playing():
             self.ui.play_button.setText(f"Pause ({key_str})")
+        else:
+            self.ui.play_button.setText(f"Play ({key_str})")
 
     def toggle_playback_state(self):
-        if self.playback_controller.is_paused(): pass 
-        else: self.ui.piano_widget.clear()
+        if not self.playback_controller.is_paused():
+            self.ui.piano_widget.clear()
 
         if self.playback_controller.is_playing() or self.playback_controller.is_paused():
             self.playback_controller.toggle_pause()
-            self._update_pause_ui_state()
+            self._sync_play_button()
             if not self.playback_controller.is_paused():
                 current_t = self.ui.timeline_widget.current_time
                 self._on_visual_scrub(current_t)
@@ -144,7 +150,7 @@ class MainWindow(QMainWindow):
             self.handle_play()
 
     def _on_auto_paused(self):
-        self._update_pause_ui_state()
+        self._sync_play_button()
         self.ui.piano_widget.clear()
         self.ui.stop_button.setEnabled(True)
 
@@ -154,15 +160,19 @@ class MainWindow(QMainWindow):
     
     def _on_visual_scrub(self, time):
         active_pitches = set()
-        for note in self.current_notes:
-            if note.start_time <= time < note.end_time: active_pitches.add(note.pitch)
+        hi = bisect.bisect_right(self._note_start_times, time)
+        for note in self.current_notes[:hi]:
+            if note.end_time > time:
+                active_pitches.add(note.pitch)
         self.ui.piano_widget.set_active_pitches(list(active_pitches))
         self.ui.update_time_label(time, self.total_song_duration_sec)
 
     def _on_timeline_data_ready(self, notes, total_dur, tempo_map):
         self.current_notes = notes
+        self._note_start_times = [n.start_time for n in notes]
         self.total_song_duration_sec = total_dur
         self.ui.timeline_widget.set_data(notes, total_dur, tempo_map)
+        self.ui.reset_timeline_position()
 
     def update_progress(self, current_time):
         self.ui.update_progress(current_time, self.total_song_duration_sec)
@@ -256,10 +266,9 @@ class MainWindow(QMainWindow):
             self.playback_controller.play(config, self.selected_tracks_info)
             
         self.ui.set_controls_enabled(False, bool(self.loaded_save_data))
-        self.ui.play_button.setEnabled(True) 
+        self.ui.play_button.setEnabled(True)
         self.ui.stop_button.setEnabled(True)
-        key_str = self.hotkey_manager._format_key_string(self.hotkey_manager.current_key)
-        self.ui.play_button.setText(f"Pause ({key_str})")
+        self._sync_play_button()
         self.ui.tabs.setCurrentIndex(1)
 
     def handle_stop(self):
@@ -269,9 +278,10 @@ class MainWindow(QMainWindow):
         self.ui.log_output.append("Playback process finished.\n" + "="*50 + "\n")
         self.ui.set_controls_enabled(True, bool(self.loaded_save_data))
         self.ui.stop_button.setEnabled(False)
-        self.ui.play_button.setText(f"Play ({self.hotkey_manager._format_key_string(self.hotkey_manager.current_key)})")
+        self._sync_play_button()
 
     def closeEvent(self, event):
+        self._save_config()
         self.playback_controller.shutdown()
         event.accept()
 

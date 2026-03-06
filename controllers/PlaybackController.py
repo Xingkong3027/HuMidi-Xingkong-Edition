@@ -8,8 +8,116 @@ from PyQt6.QtCore import QObject, QThread, pyqtSignal as Signal
 
 from core.models import Note, KeyEvent
 from core.core import MidiParser, TempoMap
-from core.analysis import SectionAnalyzer, FingeringEngine
+from core.section_analyzer import SectionAnalyzer, assign_hands
 from core.player import Player
+
+
+def _prepare_notes(config: Dict, selected_tracks_info: List, log=None):
+    """Parse MIDI, apply track role assignments, and run hand simulation.
+
+    Shared by PlaybackController.play() and _SaveWorker.run() to eliminate the
+    duplicated note-preparation pipeline that previously existed in both places.
+
+    Returns (final_notes, tempo_map). Raises on MIDI parse failure — callers
+    should catch and surface the exception appropriately.
+    """
+    tempo_scale = config.get('tempo', 100.0) / 100.0
+    tracks, tempo_map = MidiParser.parse_structure(config['midi_file'], tempo_scale, None)
+    selected_indices = [t.index for t, _ in selected_tracks_info]
+    role_map = {t.index: r for t, r in selected_tracks_info}
+    final_notes = []
+
+    for track in tracks:
+        if track.index in selected_indices:
+            role = role_map[track.index]
+            if log:
+                log(f"Track {track.index} ({track.name}): {len(track.notes)} Notes | Role: {role}")
+            for note in track.notes:
+                new_note = copy.deepcopy(note)
+                if role == "Left Hand": new_note.hand = 'left'
+                elif role == "Right Hand": new_note.hand = 'right'
+                final_notes.append(new_note)
+
+    final_notes.sort(key=lambda n: n.start_time)
+
+    if config.get('simulate_hands'):
+        if log: log("Simulating hands for unassigned notes...")
+        assign_hands(final_notes)
+    else:
+        for note in final_notes:
+            if note.hand == 'unknown':
+                note.hand = 'left' if note.pitch < 60 else 'right'
+
+    return final_notes, tempo_map
+
+
+class _SaveWorker(QObject):
+    status_updated = Signal(str)
+    save_successful = Signal(str, str)
+    save_failed = Signal(str)
+    finished = Signal()
+
+    def __init__(self, config: Dict, selected_tracks_info: List, save_dir: str, original_filename: str):
+        super().__init__()
+        self.config = config
+        self.selected_tracks_info = selected_tracks_info
+        self.save_dir = save_dir
+        self.original_filename = original_filename
+
+    def run(self):
+        self.status_updated.emit("Compiling data for serialization...")
+
+        try:
+            final_notes, tempo_map = _prepare_notes(self.config, self.selected_tracks_info)
+        except Exception as e:
+            self.save_failed.emit(f"Error preparing save data:\n{e}")
+            self.finished.emit()
+            return
+
+        analyzer = SectionAnalyzer(final_notes, tempo_map)
+        sections = analyzer.analyze()
+
+        compiler_player = Player(self.config, final_notes, sections, tempo_map)
+        compiler_player.status_updated.connect(self.status_updated)
+        events_to_serialize = compiler_player.export_compiled_events()
+
+        if not events_to_serialize:
+            self.save_failed.emit(
+                "Compilation produced zero events — nothing to save.\n"
+                "Verify that the selected tracks contain notes within the keyboard's playable range."
+            )
+            self.finished.emit()
+            return
+
+        serialized_events = [
+            {'time': ev.time, 'priority': ev.priority, 'action': ev.action,
+             'key_char': ev.key_char, 'pitch': ev.pitch}
+            for ev in events_to_serialize
+        ]
+
+        metadata = {
+            'creation_timestamp': datetime.now().isoformat(),
+            'source_midi_filename': self.original_filename,
+            'playback_settings': self.config
+        }
+
+        save_data = {'metadata': metadata, 'compiled_events': serialized_events}
+
+        timestamp_str = datetime.now().strftime("%Y%m%d_%H%M%S")
+        output_filename = f"{Path(self.original_filename).stem}_{timestamp_str}.json"
+        output_path = Path(self.save_dir) / output_filename
+
+        try:
+            with open(output_path, 'w') as f:
+                json.dump(save_data, f, indent=4)
+            self.status_updated.emit(f"Serialization successful: {output_path}")
+            self.save_successful.emit(str(output_path), "Playback sequence serialized and saved successfully.")
+        except Exception as e:
+            self.status_updated.emit(f"Serialization failed: {e}")
+            self.save_failed.emit(f"Failed to serialize playback data to Windows file system:\n{e}")
+
+        self.finished.emit()
+
 
 class PlaybackController(QObject):
     # Signals to communicate back to the GUI
@@ -29,6 +137,8 @@ class PlaybackController(QObject):
         super().__init__()
         self.player = None
         self.player_thread = None
+        self._save_worker = None
+        self._save_thread = None
 
     def is_playing(self) -> bool:
         return self.player_thread is not None and self.player_thread.isRunning()
@@ -62,123 +172,47 @@ class PlaybackController(QObject):
         self.playback_finished.emit()
 
     def save(self, config: Dict, selected_tracks_info: List, save_dir: str, original_filename: str):
-        self.status_updated.emit("Compiling data for serialization...")
-        tempo_scale = config.get('tempo', 100.0) / 100.0
-        
-        try:
-            tracks, tempo_map = MidiParser.parse_structure(config['midi_file'], tempo_scale, None)
-            selected_indices = [t.index for t, _ in selected_tracks_info]
-            role_map = {t.index: r for t, r in selected_tracks_info}
-            final_notes = []
-            
-            for track in tracks:
-                if track.index in selected_indices:
-                    role = role_map[track.index]
-                    for note in track.notes:
-                        new_note = copy.deepcopy(note)
-                        if role == "Left Hand": new_note.hand = 'left'
-                        elif role == "Right Hand": new_note.hand = 'right'
-                        final_notes.append(new_note)
-        except Exception as e:
-            self.save_failed.emit(f"Error preparing save data:\n{e}")
-            return
+        self._save_thread = QThread()
+        self._save_worker = _SaveWorker(config, selected_tracks_info, save_dir, original_filename)
+        self._save_worker.moveToThread(self._save_thread)
 
-        final_notes.sort(key=lambda n: n.start_time)
-        
-        if config.get('simulate_hands'):
-            engine = FingeringEngine()
-            engine.assign_hands(final_notes)
-        else:
-            for note in final_notes:
-                if note.hand == 'unknown':
-                    note.hand = 'left' if note.pitch < 60 else 'right'
+        self._save_thread.started.connect(self._save_worker.run)
+        self._save_worker.status_updated.connect(self.status_updated)
+        self._save_worker.save_successful.connect(self.save_successful)
+        self._save_worker.save_failed.connect(self.save_failed)
+        self._save_worker.finished.connect(self._on_save_finished)
 
-        analyzer = SectionAnalyzer(final_notes, tempo_map)
-        sections = analyzer.analyze()
-        
-        compiler_player = Player(config, final_notes, sections, tempo_map)
-        events_to_serialize = compiler_player.export_compiled_events()
-        
-        serialized_events = []
-        for ev in events_to_serialize:
-            serialized_events.append({
-                'time': ev.time,
-                'priority': ev.priority,
-                'action': ev.action,
-                'key_char': ev.key_char,
-                'pitch': ev.pitch
-            })
-        
-        metadata = {
-            'creation_timestamp': datetime.now().isoformat(),
-            'source_midi_filename': original_filename,
-            'playback_settings': config
-        }
-        
-        save_data = {
-            'metadata': metadata,
-            'compiled_events': serialized_events
-        }
-        
-        timestamp_str = datetime.now().strftime("%Y%m%d_%H%M%S")
-        output_filename = f"{Path(original_filename).stem}_{timestamp_str}.json"
-        output_path = Path(save_dir) / output_filename
-        
-        try:
-            with open(output_path, 'w') as f:
-                json.dump(save_data, f, indent=4)
-            self.status_updated.emit(f"Serialization successful: {output_path}")
-            self.save_successful.emit(str(output_path), "Playback sequence serialized and saved successfully.")
-        except Exception as e:
-            self.status_updated.emit(f"Serialization failed: {e}")
-            self.save_failed.emit(f"Failed to serialize playback data to Windows file system:\n{e}")
+        self._save_thread.start()
+
+    def _on_save_finished(self):
+        if self._save_thread:
+            self._save_thread.quit()
+            self._save_thread.wait()
+        self._save_worker = None
+        self._save_thread = None
 
     def play(self, config: Dict, selected_tracks_info: List):
         self.status_updated.emit("Preparing playback...")
-        tempo_scale = config.get('tempo', 100.0) / 100.0
-        
+
+        debug_log = self.status_updated.emit if config.get('debug_mode') else None
+        if debug_log:
+            debug_log("\n=== RAW MIDI DATA (Selected Tracks) ===")
+
         try:
-            tracks, tempo_map = MidiParser.parse_structure(config['midi_file'], tempo_scale, None)
-            selected_indices = [t.index for t, _ in selected_tracks_info]
-            role_map = {t.index: r for t, r in selected_tracks_info}
-            final_notes = []
-            
-            if config.get('debug_mode'): 
-                self.status_updated.emit("\n=== RAW MIDI DATA (Selected Tracks) ===")
-            for track in tracks:
-                if track.index in selected_indices:
-                    role = role_map[track.index]
-                    if config.get('debug_mode'): 
-                        self.status_updated.emit(f"Track {track.index} ({track.name}): {len(track.notes)} Notes | Role: {role}")
-                    for note in track.notes:
-                        new_note = copy.deepcopy(note)
-                        if role == "Left Hand": new_note.hand = 'left'
-                        elif role == "Right Hand": new_note.hand = 'right'
-                        final_notes.append(new_note)
+            final_notes, tempo_map = _prepare_notes(config, selected_tracks_info, log=debug_log)
         except Exception as e:
             self.error_occurred.emit(f"Error preparing playback:\n{e}")
             return
 
-        final_notes.sort(key=lambda n: n.start_time)
-        
-        if config.get('simulate_hands'):
-            self.status_updated.emit("Simulating hands for unassigned notes...")
-            engine = FingeringEngine()
-            engine.assign_hands(final_notes)
-        else:
-            for note in final_notes:
-                if note.hand == 'unknown':
-                    note.hand = 'left' if note.pitch < 60 else 'right'
-
         self.status_updated.emit("Analyzing musical structure...")
         analyzer = SectionAnalyzer(final_notes, tempo_map)
         sections = analyzer.analyze()
-        
-        if config.get('debug_mode'):
-            self.status_updated.emit("\n=== MUSICAL STRUCTURE ANALYSIS ===")
+
+        if debug_log:
+            debug_log("\n=== MUSICAL STRUCTURE ANALYSIS ===")
             for i, sec in enumerate(sections):
-                self.status_updated.emit(f"SECTION {i} [{sec.start_time:.2f}s - {sec.end_time:.2f}s] {sec.articulation_label}")
-                
+                debug_log(f"SECTION {i} [{sec.start_time:.2f}s - {sec.end_time:.2f}s] {sec.articulation_label}")
+
         total_dur = max(n.end_time for n in final_notes) if final_notes else 1.0
         
         # Pass the processed timeline metrics back to the GUI
@@ -250,9 +284,8 @@ class PlaybackController(QObject):
         
         self.player_thread = QThread()
         self.player = Player(config, [], [], dummy_tempo)
-        self.player.compiled_events = reconstructed_events
-        self.player.total_duration = total_dur
-        
+        self.player.load_compiled_events(reconstructed_events, total_dur)
+
         self.player.moveToThread(self.player_thread)
         self.player_thread.started.connect(self.player.play_saved_events)
         

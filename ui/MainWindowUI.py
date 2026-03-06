@@ -1,7 +1,7 @@
-from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QPushButton, 
-                             QCheckBox, QSlider, QLabel, QGroupBox, QTabWidget, 
-                             QTextEdit, QComboBox, QDoubleSpinBox, QGridLayout, 
-                             QScrollArea, QLineEdit, QStatusBar, QApplication)
+from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QPushButton,
+                             QCheckBox, QSlider, QLabel, QGroupBox, QTabWidget,
+                             QTextEdit, QComboBox, QDoubleSpinBox, QGridLayout,
+                             QScrollArea, QStackedWidget, QLineEdit, QStatusBar, QApplication)
 from PyQt6.QtCore import Qt, QObject
 from PyQt6.QtGui import QFont
 
@@ -13,10 +13,10 @@ class MainWindowUI(QObject):
         self.main_window = main_window
         
         self.pedal_mapping = {
-            "Automatic (Default)": "hybrid",
-            "Always Sustain": "legato",
-            "Rhythmic Only": "rhythmic",
-            "No Pedal": "none"
+            "Auto (Default)": "hybrid",
+            "Harmonic": "legato",
+            "Rhythmic": "rhythmic",
+            "None": "none"
         }
         self.pedal_mapping_inv = {v: k for k, v in self.pedal_mapping.items()}
         
@@ -39,16 +39,33 @@ class MainWindowUI(QObject):
         # --- Visualizer Tab ---
         vis_layout = QVBoxLayout(visual_tab)
         vis_layout.setContentsMargins(5, 5, 5, 5)
-        
+
+        self._vis_stack = QStackedWidget()
+
+        # Stack page 0: full piano-roll timeline
+        timeline_page = QWidget()
+        timeline_page_layout = QVBoxLayout(timeline_page)
+        timeline_page_layout.setContentsMargins(0, 0, 0, 0)
         self.scroll_area = QScrollArea()
-        self.scroll_area.setWidgetResizable(True) 
+        self.scroll_area.setWidgetResizable(True)
         self.scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOn)
         self.scroll_area.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-        
         self.timeline_widget = TimelineWidget()
         self.scroll_area.setWidget(self.timeline_widget)
-        vis_layout.addWidget(self.scroll_area)
-        
+        timeline_page_layout.addWidget(self.scroll_area)
+        self._vis_stack.addWidget(timeline_page)
+
+        # Stack page 1: plain seek slider
+        self._simple_slider = QSlider(Qt.Orientation.Horizontal)
+        self._simple_slider.setRange(0, 10000)
+        self._simple_slider.sliderPressed.connect(self._on_simple_slider_pressed)
+        self._simple_slider.sliderMoved.connect(self._on_simple_slider_moved)
+        self._simple_slider.sliderReleased.connect(self._on_simple_slider_released)
+        self._vis_stack.addWidget(self._simple_slider)
+        self._simple_slider_dragging = False
+
+        vis_layout.addWidget(self._vis_stack)
+
         self.piano_widget = PianoWidget()
         vis_layout.addWidget(self.piano_widget)
 
@@ -66,36 +83,67 @@ class MainWindowUI(QObject):
         settings_layout = QVBoxLayout(settings_tab)
         hk_group = QGroupBox("Hotkey")
         hk_layout = QHBoxLayout(hk_group)
-        self.hk_label = QLabel(f"Start/Stop Hotkey: ")
+        self.hk_label = QLabel("Hotkey: ")
         self.hk_btn = QPushButton("Change")
+        self.hk_btn.setToolTip("Click to bind a new hotkey for toggling playback")
         hk_layout.addWidget(self.hk_label)
         hk_layout.addWidget(self.hk_btn)
         settings_layout.addWidget(hk_group)
 
-        overlay_group = QGroupBox("Overlay Mode")
+        overlay_group = QGroupBox("Overlay")
         ov_layout = QGridLayout(overlay_group)
-        self.always_top_check = QCheckBox("Window Always on Top")
-        
-        opacity_label = QLabel("Window Opacity:")
+        self.always_top_check = QCheckBox("Always on Top")
+        self.always_top_check.setToolTip("Keep this window above all other windows")
+
+        opacity_label = QLabel("Opacity")
         self.opacity_slider = QSlider(Qt.Orientation.Horizontal)
         self.opacity_slider.setRange(20, 100)
         self.opacity_slider.setValue(100)
-        
+        self.opacity_slider.setToolTip("Adjust window transparency (20–100%)")
+
         ov_layout.addWidget(self.always_top_check, 0, 0, 1, 2)
         ov_layout.addWidget(opacity_label, 1, 0)
         ov_layout.addWidget(self.opacity_slider, 1, 1)
         settings_layout.addWidget(overlay_group)
         
         # --- Save Directory Settings ---
-        save_group = QGroupBox("Save Configuration")
+        save_group = QGroupBox("Save Path")
         save_layout = QHBoxLayout(save_group)
         self.save_path_input = QLineEdit()
         self.save_path_input.setReadOnly(True)
+        self.save_path_input.setToolTip("Directory where humanized performance saves are stored")
         self.save_browse_btn = QPushButton("Browse")
+        self.save_browse_btn.setToolTip("Choose where to save humanized performance files")
         save_layout.addWidget(self.save_path_input)
         save_layout.addWidget(self.save_browse_btn)
         settings_layout.addWidget(save_group)
-        
+
+        vis_settings_group = QGroupBox("Visualizer")
+        vis_settings_layout = QVBoxLayout(vis_settings_group)
+        self.timeline_vis_check = QCheckBox("Timeline")
+        self.timeline_vis_check.setChecked(True)
+        self.timeline_vis_check.setToolTip("Show the piano-roll timeline in the Visualizer tab (disable for a simple seek slider)")
+        self.piano_vis_check = QCheckBox("Piano Keys")
+        self.piano_vis_check.setChecked(True)
+        self.piano_vis_check.setToolTip("Show the piano key visualizer in the Visualizer tab")
+        vis_settings_layout.addWidget(self.timeline_vis_check)
+        vis_settings_layout.addWidget(self.piano_vis_check)
+        settings_layout.addWidget(vis_settings_group)
+        self.timeline_vis_check.toggled.connect(self._on_timeline_toggle)
+        self.piano_vis_check.toggled.connect(self._on_piano_toggle)
+
+        ai_group = QGroupBox("AI Model")
+        ai_layout = QVBoxLayout(ai_group)
+        self.use_ai_pedal_check = QCheckBox("Enable AI Pedal")
+        self.use_ai_pedal_check.setChecked(True)
+        self.use_ai_pedal_check.setToolTip(
+            "Use the ONNX BiLSTM model for pedal timing when 'Auto (Default)' is selected.\n"
+            "Falls back to the algorithmic driver if the model file is missing.\n"
+            "Disable to always use the algorithmic driver."
+        )
+        ai_layout.addWidget(self.use_ai_pedal_check)
+        settings_layout.addWidget(ai_group)
+
         settings_layout.addStretch()
 
         # --- Log Tab ---
@@ -107,7 +155,9 @@ class MainWindowUI(QObject):
         
         log_btn_layout = QHBoxLayout()
         self.log_clear_btn = QPushButton("Clear")
-        self.log_copy_btn = QPushButton("Copy to Clipboard")
+        self.log_clear_btn.setToolTip("Clear all log entries")
+        self.log_copy_btn = QPushButton("Copy Log")
+        self.log_copy_btn.setToolTip("Copy the full log to clipboard")
         self.log_clear_btn.clicked.connect(self.log_output.clear)
         self.log_copy_btn.clicked.connect(self.copy_log_to_clipboard)
         log_btn_layout.addWidget(self.log_clear_btn)
@@ -121,10 +171,14 @@ class MainWindowUI(QObject):
         media_layout.addWidget(self.time_label)
 
         button_layout = QHBoxLayout()
-        self.play_button = QPushButton("Play") 
+        self.play_button = QPushButton("Play")
+        self.play_button.setToolTip("Start, pause, or resume playback")
         self.stop_button = QPushButton("Stop")
+        self.stop_button.setToolTip("Stop playback and reset to the beginning")
         self.save_button = QPushButton("Save")
-        self.reset_button = QPushButton("Reset Defaults")
+        self.save_button.setToolTip("Save the current humanized performance to a file for later replay")
+        self.reset_button = QPushButton("Reset")
+        self.reset_button.setToolTip("Reset all settings to their default values")
         button_layout.addWidget(self.play_button)
         button_layout.addWidget(self.stop_button)
         button_layout.addWidget(self.save_button)
@@ -170,9 +224,11 @@ class MainWindowUI(QObject):
         self.file_path_label.setStyleSheet("font-style: italic; color: grey;")
         
         btn_layout = QHBoxLayout()
-        self.browse_button = QPushButton("Browse for MIDI File")
-        self.load_saved_btn = QPushButton("Load saved...")
-        
+        self.browse_button = QPushButton("Browse...")
+        self.browse_button.setToolTip("Open a MIDI file to play")
+        self.load_saved_btn = QPushButton("Load Save")
+        self.load_saved_btn.setToolTip("Load a previously saved humanized performance")
+
         btn_layout.addWidget(self.browse_button)
         btn_layout.addWidget(self.load_saved_btn)
         
@@ -185,19 +241,30 @@ class MainWindowUI(QObject):
         grid = QGridLayout(group)
         tempo_label = QLabel("Tempo")
         self.tempo_slider, self.tempo_spinbox = self._create_slider_and_spinbox(10.0, 200.0, 100.0, "%", factor=10.0, decimals=1)
-        grid.addWidget(tempo_label, 0, 0) 
+        self.tempo_slider.setToolTip("Playback speed as a percentage of the original tempo")
+        self.tempo_spinbox.setToolTip("Playback speed as a percentage of the original tempo")
+        grid.addWidget(tempo_label, 0, 0)
         grid.addWidget(self.tempo_slider, 0, 2); grid.addWidget(self.tempo_spinbox, 0, 3)
 
-        pedal_label = QLabel("Pedal Style")
+        pedal_label = QLabel("Pedal")
         self.pedal_style_combo = QComboBox()
         self.pedal_style_combo.addItems(list(self.pedal_mapping.keys()))
-        
+        self.pedal_style_combo.setToolTip(
+            "Auto (Default): AI-driven pedal using a hybrid of rhythmic and harmonic analysis\n"
+            "Harmonic: Hold pedal through harmonic regions, releasing at chord/bass changes\n"
+            "Rhythmic: Release pedal on beat boundaries only\n"
+            "None: No sustain pedal"
+        )
+
         grid.addWidget(pedal_label, 1, 0)
         grid.addWidget(self.pedal_style_combo, 1, 2, 1, 2)
-        self.use_88_key_check = QCheckBox("Use 88-Key Extended Layout")
+        self.use_88_key_check = QCheckBox("88-Key Layout")
+        self.use_88_key_check.setToolTip("Map notes to the full 88-key piano layout instead of a compressed keyboard layout")
         grid.addWidget(self.use_88_key_check, 2, 0, 1, 4)
-        self.countdown_check = QCheckBox("3 second countdown")
-        self.debug_check = QCheckBox("Enable debug output")
+        self.countdown_check = QCheckBox("Countdown")
+        self.countdown_check.setToolTip("Show a 3-second countdown before playback begins")
+        self.debug_check = QCheckBox("Debug Output")
+        self.debug_check.setToolTip("Print verbose event logs to the Debug tab during playback")
         grid.addWidget(self.countdown_check, 3, 0, 1, 4)
         grid.addWidget(self.debug_check, 4, 0, 1, 4)
         grid.setColumnStretch(2, 1)
@@ -206,7 +273,8 @@ class MainWindowUI(QObject):
     def _create_humanization_group(self):
         group = QGroupBox("Humanization")
         main_v_layout = QVBoxLayout(group)
-        self.select_all_humanization_check = QCheckBox("Select/Deselect All")
+        self.select_all_humanization_check = QCheckBox("All")
+        self.select_all_humanization_check.setToolTip("Enable or disable all humanization options at once")
         main_v_layout.addWidget(self.select_all_humanization_check)
         self.all_humanization_checks = {}
         self.all_humanization_spinboxes = {}
@@ -214,20 +282,30 @@ class MainWindowUI(QObject):
 
         simple_toggles_layout = QHBoxLayout()
         self.all_humanization_checks['simulate_hands'] = QCheckBox("Simulate Hands")
-        self.all_humanization_checks['enable_chord_roll'] = QCheckBox("Chord Rolling")
+        self.all_humanization_checks['simulate_hands'].setToolTip(
+            "Assign notes to left/right hand and limit simultaneous finger usage to simulate realistic hand behavior"
+        )
+        self.all_humanization_checks['enable_chord_roll'] = QCheckBox("Chord Roll")
+        self.all_humanization_checks['enable_chord_roll'].setToolTip(
+            "Slightly stagger the notes within each chord to simulate the natural roll of fingers across the keys"
+        )
         simple_toggles_layout.addWidget(self.all_humanization_checks['simulate_hands'])
         simple_toggles_layout.addStretch(1)
         simple_toggles_layout.addWidget(self.all_humanization_checks['enable_chord_roll'])
         main_v_layout.addLayout(simple_toggles_layout)
-        
+
         detailed_layout = QGridLayout()
-        detailed_layout.setColumnStretch(2, 1) 
-        
-        def add_detailed_row(row_idx, name, key, min_val, max_val, def_val, suffix, factor=1.0, decimals=3):
+        detailed_layout.setColumnStretch(2, 1)
+
+        def add_detailed_row(row_idx, name, key, min_val, max_val, def_val, suffix, factor=1.0, decimals=3, tooltip=""):
             check = QCheckBox(name)
             slider, spinbox = self._create_slider_and_spinbox(min_val, max_val, def_val, suffix, factor=factor, decimals=decimals)
             check.toggled.connect(slider.setEnabled)
             check.toggled.connect(spinbox.setEnabled)
+            if tooltip:
+                check.setToolTip(tooltip)
+                slider.setToolTip(tooltip)
+                spinbox.setToolTip(tooltip)
             detailed_layout.addWidget(check, row_idx, 0)
             detailed_layout.addWidget(slider, row_idx, 2)
             detailed_layout.addWidget(spinbox, row_idx, 3)
@@ -235,13 +313,19 @@ class MainWindowUI(QObject):
             self.all_humanization_sliders[key] = slider
             self.all_humanization_spinboxes[key] = spinbox
 
-        add_detailed_row(0, "Vary Timing", "vary_timing", 0, 0.1, 0.01, " s", factor=10000.0)
-        add_detailed_row(1, "Vary Articulation", "vary_articulation", 50, 100, 95, "%", factor=100.0, decimals=1)
-        add_detailed_row(2, "Hand Drift", "hand_drift", 0, 100, 25, "%", factor=100.0, decimals=1)
-        add_detailed_row(3, "Mistake Chance", "mistake_chance", 0, 10, 0, "%", factor=100.0, decimals=1)
-        add_detailed_row(4, "Tempo Sway", "tempo_sway", 0, 0.1, 0, " s", factor=10000.0)
+        add_detailed_row(0, "Vary Timing", "vary_timing", 0, 0.1, 0.01, " s", factor=10000.0,
+                         tooltip="Add random timing offsets to note events (in seconds)")
+        add_detailed_row(1, "Vary Articulation", "vary_articulation", 50, 100, 95, "%", factor=100.0, decimals=1,
+                         tooltip="Randomize note hold duration — lower values create a more staccato feel")
+        add_detailed_row(2, "Hand Drift", "hand_drift", 0, 100, 25, "%", factor=100.0, decimals=1,
+                         tooltip="Simulate gradual timing drift between the left and right hands")
+        add_detailed_row(3, "Mistakes", "mistake_chance", 0, 10, 0, "%", factor=100.0, decimals=1,
+                         tooltip="Randomly skip notes to simulate human errors")
+        add_detailed_row(4, "Tempo Sway", "tempo_sway", 0, 0.1, 0, " s", factor=10000.0,
+                         tooltip="Apply a sinusoidal tempo variation across the song for a more expressive feel")
 
-        self.invert_sway_check = QCheckBox("Invert tempo sway")
+        self.invert_sway_check = QCheckBox("Invert Sway")
+        self.invert_sway_check.setToolTip("Invert the phase of the tempo sway curve")
         self.all_humanization_checks['invert_tempo_sway'] = self.invert_sway_check
         self.all_humanization_checks['tempo_sway'].toggled.connect(self.invert_sway_check.setEnabled)
         detailed_layout.addWidget(self.invert_sway_check, 5, 0)
@@ -256,11 +340,12 @@ class MainWindowUI(QObject):
 
     def reset_controls_to_default(self):
         self.tempo_spinbox.setValue(100)
-        self.pedal_style_combo.setCurrentText("Automatic (Default)")
+        self.pedal_style_combo.setCurrentText("Auto (Default)")
         self.use_88_key_check.setChecked(False)
         self.countdown_check.setChecked(True)
         self.debug_check.setChecked(False)
-        
+        self.use_ai_pedal_check.setChecked(True)
+
         self.all_humanization_spinboxes['vary_timing'].setValue(0.010)
         self.all_humanization_spinboxes['vary_articulation'].setValue(95.0)
         self.all_humanization_spinboxes['hand_drift'].setValue(25.0)
@@ -303,16 +388,50 @@ class MainWindowUI(QObject):
         self.main_window.statusBar().showMessage("Log copied to clipboard!", 2000)
 
     def update_progress(self, current_time, total_duration):
-        if not self.timeline_widget.is_dragging:
-            self.timeline_widget.set_position(current_time)
-            self.update_time_label(current_time, total_duration)
-            timeline_width = self.timeline_widget.width()
-            scroll_width = self.scroll_area.width()
-            if total_duration > 0:
-                ratio = current_time / total_duration
-                cursor_x = ratio * timeline_width
-                target_scroll = cursor_x - (scroll_width / 2)
-                self.scroll_area.horizontalScrollBar().setValue(int(target_scroll))
+        if self._vis_stack.currentIndex() == 0:
+            if not self.timeline_widget.is_dragging:
+                self.timeline_widget.set_position(current_time)
+                self.update_time_label(current_time, total_duration)
+                timeline_width = self.timeline_widget.width()
+                scroll_width = self.scroll_area.width()
+                if total_duration > 0:
+                    ratio = current_time / total_duration
+                    cursor_x = ratio * timeline_width
+                    target_scroll = cursor_x - (scroll_width / 2)
+                    self.scroll_area.horizontalScrollBar().setValue(int(target_scroll))
+        else:
+            if not self._simple_slider_dragging:
+                self._simple_slider.blockSignals(True)
+                if total_duration > 0:
+                    self._simple_slider.setValue(int(current_time / total_duration * 10000))
+                self._simple_slider.blockSignals(False)
+                self.update_time_label(current_time, total_duration)
+
+    def reset_timeline_position(self):
+        self.timeline_widget.current_time = 0.0
+        self._simple_slider.blockSignals(True)
+        self._simple_slider.setValue(0)
+        self._simple_slider.blockSignals(False)
+
+    def _on_timeline_toggle(self, checked):
+        self._vis_stack.setCurrentIndex(0 if checked else 1)
+
+    def _on_piano_toggle(self, checked):
+        self.piano_widget.setVisible(checked)
+
+    def _on_simple_slider_pressed(self):
+        self._simple_slider_dragging = True
+
+    def _on_simple_slider_moved(self, value):
+        if self.timeline_widget.total_duration > 0:
+            t = (value / 10000.0) * self.timeline_widget.total_duration
+            self.timeline_widget.current_time = t
+            self.timeline_widget.scrub_position_changed.emit(t)
+            self.update_time_label(t, self.timeline_widget.total_duration)
+
+    def _on_simple_slider_released(self):
+        self._simple_slider_dragging = False
+        self.timeline_widget.seek_requested.emit(self.timeline_widget.current_time)
 
     def update_time_label(self, current, total):
         def fmt(s):
@@ -323,7 +442,7 @@ class MainWindowUI(QObject):
     def load_config_to_ui(self, config, save_dir):
         self.tempo_spinbox.setValue(config.get('tempo', 100.0))
         internal_style = config.get('pedal_style', 'hybrid')
-        display_text = self.pedal_mapping_inv.get(internal_style, "Automatic (Default)")
+        display_text = self.pedal_mapping_inv.get(internal_style, "Auto (Default)")
         self.pedal_style_combo.setCurrentText(display_text)
         self.use_88_key_check.setChecked(config.get('use_88_key_layout', False))
         self.countdown_check.setChecked(config.get('countdown', True))
@@ -342,8 +461,11 @@ class MainWindowUI(QObject):
         self.all_humanization_checks['tempo_sway'].setChecked(config.get('enable_tempo_sway', False))
         self.all_humanization_spinboxes['tempo_sway'].setValue(config.get('value_tempo_sway_intensity', 0.015))
         self.all_humanization_checks['invert_tempo_sway'].setChecked(config.get('invert_tempo_sway', False))
+        self.use_ai_pedal_check.setChecked(config.get('use_ai_pedal', True))
         self.always_top_check.setChecked(config.get('always_on_top', False))
         self.opacity_slider.setValue(config.get('opacity', 100))
+        self.timeline_vis_check.setChecked(config.get('show_timeline_visualizer', True))
+        self.piano_vis_check.setChecked(config.get('show_piano_visualizer', True))
         self.save_path_input.setText(save_dir)
         self.update_enabled_states()
 
@@ -372,8 +494,9 @@ class MainWindowUI(QObject):
             'enable_tempo_sway': self.all_humanization_checks['tempo_sway'].isChecked(), 
             'tempo_sway_intensity': self.all_humanization_spinboxes['tempo_sway'].value(),
             'invert_tempo_sway': self.all_humanization_checks['invert_tempo_sway'].isChecked(),
+            'use_ai_pedal': self.use_ai_pedal_check.isChecked(),
         }
-        
+
     def gather_app_config(self):
         """Constructs an exhaustive dictionary of all physical widget states to be serialized"""
         display_text = self.pedal_style_combo.currentText()
@@ -398,6 +521,9 @@ class MainWindowUI(QObject):
             'enable_tempo_sway': self.all_humanization_checks['tempo_sway'].isChecked(), 
             'value_tempo_sway_intensity': self.all_humanization_spinboxes['tempo_sway'].value(),
             'invert_tempo_sway': self.all_humanization_checks['invert_tempo_sway'].isChecked(),
+            'use_ai_pedal': self.use_ai_pedal_check.isChecked(),
             'always_on_top': self.always_top_check.isChecked(),
-            'opacity': self.opacity_slider.value()
+            'opacity': self.opacity_slider.value(),
+            'show_timeline_visualizer': self.timeline_vis_check.isChecked(),
+            'show_piano_visualizer': self.piano_vis_check.isChecked(),
         }
