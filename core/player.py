@@ -191,31 +191,13 @@ class Player(QObject):
 
     def _compile_event_list(self, notes_to_play: List[Note], sections: List[MusicalSection]):
         self.key_states.clear()
-        use_mistakes = self.config.get('enable_mistakes', False)
+        use_mistakes   = self.config.get('enable_mistakes', False)
         mistake_chance = self.config.get('mistake_chance', 0) / 100.0
-        
-        temp_heap = []
-        played_pitches_in_section = set()
-        current_section_idx = -1
-        sec_ptr = 0
-        num_sections = len(sections)
+        temp_heap      = []
 
         for note in notes_to_play:
-            while sec_ptr < num_sections - 1 and sections[sec_ptr].end_time <= note.start_time:
-                sec_ptr += 1
-            note_section_idx = (sec_ptr if num_sections > 0 and
-                                sections[sec_ptr].start_time <= note.start_time < sections[sec_ptr].end_time
-                                else -1)
-
-            if note_section_idx != current_section_idx:
-                played_pitches_in_section.clear()
-                current_section_idx = note_section_idx
-
-            mistake_scheduled = False
-            is_eligible_for_mistake = note.pitch not in played_pitches_in_section
-            make_mistake = use_mistakes and is_eligible_for_mistake and (random.random() < mistake_chance)
-            
-            if make_mistake:
+            scheduled = False
+            if use_mistakes and random.random() < mistake_chance:
                 mistake_pitch = self._get_mistake_pitch(note.pitch)
                 if mistake_pitch:
                     key_data = self.mapper.get_key_data(mistake_pitch)
@@ -223,26 +205,24 @@ class Player(QObject):
                         mk_char = key_data['key']
                         heapq.heappush(temp_heap, KeyEvent(note.start_time, 2, 'press', mk_char, pitch=mistake_pitch))
                         heapq.heappush(temp_heap, KeyEvent(note.start_time + note.duration, 4, 'release', mk_char, pitch=mistake_pitch))
-                        mistake_scheduled = True
+                        scheduled = True
 
-            if not mistake_scheduled:
+            if not scheduled:
                 key_data = self.mapper.get_key_data(note.pitch)
                 if key_data:
                     key_char = key_data['key']
                     heapq.heappush(temp_heap, KeyEvent(note.start_time, 2, 'press', key_char, pitch=note.pitch))
                     heapq.heappush(temp_heap, KeyEvent(note.end_time, 4, 'release', key_char, pitch=note.pitch))
-                    if key_char not in self.key_states: self.key_states[key_char] = KeyState(key_char)
-            
-            played_pitches_in_section.add(note.pitch)
-        
-        pedal_events = pedal_generator.generate_events(self.config, notes_to_play, sections, self._log_debug)
-        for event in pedal_events: 
+                    if key_char not in self.key_states:
+                        self.key_states[key_char] = KeyState(key_char)
+
+        for event in pedal_generator.generate_events(self.config, notes_to_play, sections, self._log_debug):
             heapq.heappush(temp_heap, event)
-            
+
         self.compiled_events = []
         while temp_heap:
             self.compiled_events.append(heapq.heappop(temp_heap))
-            
+
         self.total_duration = self.compiled_events[-1].time if self.compiled_events else 0.0
             
     def _get_mistake_pitch(self, original_pitch: int) -> Optional[int]:

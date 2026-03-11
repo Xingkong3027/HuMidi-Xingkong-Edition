@@ -6,7 +6,8 @@ from PyQt6.QtWidgets import QApplication, QMainWindow, QMessageBox, QFileDialog,
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QIcon
 
-from core.core import MidiParser
+from core.core import MidiParser, KeyMapper, TempoMap
+from core.translator import FormatRegistry
 from managers.HotkeyManager import HotkeyManager
 from controllers.PlaybackController import PlaybackController
 from managers.ConfigManager import ConfigManager
@@ -18,8 +19,8 @@ class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("HuMidi v1.3")
-        self.setMinimumWidth(550)
-        self.setMinimumHeight(683)
+        self.setMinimumWidth(820)
+        self.setMinimumHeight(520)
 
         # Set specific Icon base execution path (Required for OS Contexts)
         base_path = sys._MEIPASS if getattr(sys, 'frozen', False) else os.path.dirname(os.path.abspath(__file__))
@@ -60,6 +61,9 @@ class MainWindow(QMainWindow):
         self.ui.browse_button.clicked.connect(self.select_file)
         self.ui.load_saved_btn.clicked.connect(self.open_load_dialog)
         self.ui.save_browse_btn.clicked.connect(self._browse_save_dir)
+        self.ui._collapsed_load_btn.clicked.connect(self.select_file)
+        self.ui._collapsed_load_saved_btn.clicked.connect(self.open_load_dialog)
+        self.ui._collapsed_save_btn.clicked.connect(self.handle_save)
         self.ui.hk_btn.clicked.connect(self._change_hotkey)
         
         # View manipulations bound to Window behavior
@@ -72,6 +76,10 @@ class MainWindow(QMainWindow):
         self.ui.timeline_vis_check.toggled.connect(self._save_config)
         self.ui.piano_vis_check.toggled.connect(self._save_config)
         self.ui.use_ai_pedal_check.toggled.connect(self._save_config)
+
+        # Translator tab
+        self.ui.translator_tab.play_sheet_requested.connect(self._on_play_sheet)
+        self.ui.translator_tab.export_requested.connect(self._on_export_sheet)
 
         # Timeline logic bridging
         self.ui.timeline_widget.seek_requested.connect(self._on_timeline_seek)
@@ -229,6 +237,79 @@ class MainWindow(QMainWindow):
             self.ui.play_button.setEnabled(False)
             self.ui.save_button.setEnabled(False)
 
+    # --- Translator ---
+    def _on_play_sheet(self, text: str, format_name: str, bpm: int, humanize: bool):
+        if self.playback_controller.is_playing() or self.playback_controller.is_paused():
+            return
+
+        fmt = FormatRegistry.get(format_name)
+        if not fmt:
+            QMessageBox.critical(self, "Unknown Format", f"No handler found for format: {format_name}")
+            return
+
+        use_88 = self.ui.use_88_key_check.isChecked()
+        key_mapper = KeyMapper(use_88_key_layout=use_88)
+
+        try:
+            notes = fmt.parse(text, float(bpm), key_mapper)
+        except Exception as e:
+            QMessageBox.critical(self, "Parse Error", f"Failed to parse sheet:\n{e}")
+            return
+
+        if not notes:
+            QMessageBox.warning(self, "No Notes", "No playable notes were found in the pasted sheet.")
+            return
+
+        tempo_us = int(60_000_000 / bpm)
+        tempo_map = TempoMap([(0, tempo_us)], [])
+
+        if humanize:
+            config = self.ui.gather_playback_config()
+        else:
+            config = {
+                'use_88_key_layout': use_88, 'debug_mode': False, 'countdown': False,
+                'pedal_style': 'none', 'simulate_hands': False, 'vary_velocity': False,
+                'enable_chord_roll': False, 'vary_timing': False, 'timing_variance': 0.01,
+                'vary_articulation': False, 'articulation': 0.95,
+                'enable_drift_correction': False, 'drift_decay_factor': 0.25,
+                'enable_mistakes': False, 'mistake_chance': 0.0,
+                'enable_tempo_sway': False, 'tempo_sway_intensity': 0.0,
+                'invert_tempo_sway': False, 'use_ai_pedal': False,
+            }
+
+        self.ui.log_output.append(f"Importing sheet: {len(notes)} notes at {bpm} BPM ({format_name})")
+        self.playback_controller.play_from_notes(config, notes, tempo_map)
+        self.ui.set_controls_enabled(False)
+        self.ui.play_button.setEnabled(True)
+        self.ui.stop_button.setEnabled(True)
+        self._sync_play_button()
+        if self.ui._nav_btns[1].isEnabled():
+            self.ui.tabs.setCurrentIndex(1)  # Switch to Visualizer
+
+    def _on_export_sheet(self, format_name: str):
+        if not self.current_notes:
+            QMessageBox.warning(self, "No MIDI Loaded",
+                                "Load and prepare a MIDI file on the Playback tab first.")
+            return
+
+        fmt = FormatRegistry.get(format_name)
+        if not fmt:
+            QMessageBox.critical(self, "Unknown Format", f"No handler found for format: {format_name}")
+            return
+
+        use_88 = self.ui.use_88_key_check.isChecked()
+        key_mapper = KeyMapper(use_88_key_layout=use_88)
+        tempo_map = getattr(self, 'parsed_tempo_map', TempoMap([(0, 500000)], []))
+
+        try:
+            text = fmt.serialize(self.current_notes, key_mapper, tempo_map)
+        except Exception as e:
+            QMessageBox.critical(self, "Export Error", f"Failed to generate sheet:\n{e}")
+            return
+
+        self.ui.translator_tab.set_export_text(text)
+        self.ui.log_output.append(f"Sheet exported: {format_name} ({len(text.splitlines())} lines)")
+
     def show_error_dialog(self, error_message: str):
         self.ui.log_output.append("ERROR: Playback thread terminated unexpectedly due to an execution failure.")
         QMessageBox.critical(self, "Hardware/Execution Failure", error_message)
@@ -269,7 +350,8 @@ class MainWindow(QMainWindow):
         self.ui.play_button.setEnabled(True)
         self.ui.stop_button.setEnabled(True)
         self._sync_play_button()
-        self.ui.tabs.setCurrentIndex(1)
+        if self.ui._nav_btns[1].isEnabled():
+            self.ui.tabs.setCurrentIndex(1)
 
     def handle_stop(self):
         self.playback_controller.stop()

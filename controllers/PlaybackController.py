@@ -234,6 +234,42 @@ class PlaybackController(QObject):
         
         self.player_thread.start()
 
+    def play_from_notes(self, config: Dict, notes: List[Note], tempo_map: TempoMap):
+        """Start playback from pre-built Note objects, bypassing MIDI file parsing.
+
+        Used by the Translator tab to play imported sheet text directly through
+        the normal humanization and playback pipeline.
+        """
+        self.status_updated.emit("Preparing playback from imported sheet...")
+
+        if config.get('simulate_hands'):
+            from core.section_analyzer import assign_hands
+            assign_hands(notes)
+        else:
+            for note in notes:
+                if note.hand == 'unknown':
+                    note.hand = 'left' if note.pitch < 60 else 'right'
+
+        analyzer = SectionAnalyzer(notes, tempo_map)
+        sections = analyzer.analyze()
+
+        total_dur = max(n.end_time for n in notes) if notes else 1.0
+        self.timeline_data_ready.emit(notes, total_dur, tempo_map)
+
+        self.player_thread = QThread()
+        self.player = Player(config, notes, sections, tempo_map)
+        self.player.moveToThread(self.player_thread)
+        self.player_thread.started.connect(self.player.play)
+
+        self.player.playback_finished.connect(self._on_playback_finished)
+        self.player.status_updated.connect(self.status_updated.emit)
+        self.player.progress_updated.connect(self.progress_updated.emit)
+        self.player.visualizer_updated.connect(self.visualizer_updated.emit)
+        self.player.auto_paused.connect(self.auto_paused.emit)
+        self.player.error_occurred.connect(self.error_occurred.emit)
+
+        self.player_thread.start()
+
     def play_from_save(self, loaded_save_data: Dict):
         self.status_updated.emit("Initializing playback from pre-compiled serialization...")
         config = loaded_save_data.get('metadata', {}).get('playback_settings', {})

@@ -35,9 +35,9 @@ class PianoWidget(QWidget):
         black_key_width = key_width * 0.65
         black_key_height = height * 0.6
         
-        white_brush = QBrush(QColor(255, 255, 255))
-        black_brush = QBrush(QColor(0, 0, 0))
-        active_brush = QBrush(QColor(0, 255, 100)) 
+        white_brush = QBrush(QColor(230, 230, 240))
+        black_brush = QBrush(QColor(28, 28, 46))
+        active_brush = QBrush(QColor(78, 203, 141))   # theme accent green
         
         white_idx = 0
         white_key_rects = {} 
@@ -50,7 +50,7 @@ class PianoWidget(QWidget):
             
             brush = active_brush if p in self.active_pitches else white_brush
             painter.setBrush(brush)
-            painter.setPen(QPen(QColor(0,0,0), 1))
+            painter.setPen(QPen(QColor(50, 50, 70), 1))
             painter.drawRect(rect)
             white_idx += 1
 
@@ -58,14 +58,14 @@ class PianoWidget(QWidget):
             if (p % 12) not in self.black_keys: continue
             prev_white = p - 1
             if prev_white not in white_key_rects: continue
-                
+
             ref_rect = white_key_rects[prev_white]
             x = ref_rect.right() - (black_key_width / 2)
             rect = QRectF(x, 0, black_key_width, black_key_height)
-            
+
             brush = active_brush if p in self.active_pitches else black_brush
             painter.setBrush(brush)
-            painter.setPen(QPen(QColor(0,0,0), 1))
+            painter.setPen(QPen(QColor(15, 15, 30), 1))
             painter.drawRect(rect)
 
 
@@ -85,12 +85,12 @@ class TimelineWidget(QWidget):
         
         self.cached_background = None
         
-        self.bg_color = QColor(30, 30, 30)
-        self.left_hand_color = QColor(80, 160, 255, 200) 
-        self.right_hand_color = QColor(255, 80, 80, 200) 
-        self.unknown_color = QColor(150, 150, 150, 150)
-        self.cursor_color = QColor(255, 255, 255)
-        self.measure_line_color = QColor(255, 255, 255, 50)
+        self.bg_color = QColor(24, 24, 40)          # matches theme #181828
+        self.left_hand_color = QColor(91, 141, 238, 210)   # theme accent blue
+        self.right_hand_color = QColor(78, 203, 141, 210)  # theme accent green
+        self.unknown_color = QColor(100, 100, 140, 160)
+        self.cursor_color = QColor(220, 220, 240)
+        self.measure_line_color = QColor(255, 255, 255, 30)
         
     def set_data(self, notes: List[Note], duration: float, tempo_map: TempoMap = None):
         self.notes = notes

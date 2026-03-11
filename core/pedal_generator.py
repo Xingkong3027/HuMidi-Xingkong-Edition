@@ -98,7 +98,12 @@ def _generate_ai_pedal(notes: List[Note], debug_log: Optional[Callable[[str], No
         e_idx = int(note.end_time * fps)
         input_tensor[0, s_idx:e_idx, note.pitch] = note.velocity / 127.0
 
-    # 3. Hardware Agnostic Forward Pass
+    # 3. Chroma Augmentation — mirrors the on-the-fly feature engineering applied during training.
+    # Chroma collapses 128-dim piano roll to 12 pitch classes by summing across octaves.
+    chroma = np.stack([input_tensor[0, :, c::12].sum(axis=1) for c in range(12)], axis=1)  # (T, 12)
+    input_tensor = np.concatenate([input_tensor[0], chroma], axis=1)[np.newaxis]  # (1, T, 140)
+
+    # 4. Hardware Agnostic Forward Pass
     # Full sequence is passed in one shot — mirrors training (no chunking, cuDNN disabled for variable-length support).
     # Chunking a BiLSTM severs the backward-direction context at every boundary, making bidirectionality meaningless.
     input_name = _session.get_inputs()[0].name
@@ -109,13 +114,6 @@ def _generate_ai_pedal(notes: List[Note], debug_log: Optional[Callable[[str], No
     except Exception as e:
         if debug_log is not None: debug_log(f"AI execution crashed during forward pass: {str(e)}")
         return []
-
-    # 4. Min-Max Normalization
-    p_min, p_max = np.min(preds), np.max(preds)
-    if p_max > p_min:
-        preds = (preds - p_min) / (p_max - p_min)
-    else:
-        preds = np.zeros_like(preds)
 
     # 5. Silence Masking
     # Mirrors the 0.35s gap logic from the algorithmic driver. Forces the tensor to 0 during rests.
