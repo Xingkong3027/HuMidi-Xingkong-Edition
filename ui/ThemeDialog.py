@@ -267,6 +267,9 @@ class ThemeDialog(QDialog):
         bbox = QDialogButtonBox(
             QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
         )
+        ok_btn = bbox.button(QDialogButtonBox.StandardButton.Ok)
+        if ok_btn:
+            ok_btn.setObjectName("save_button")
         bbox.accepted.connect(self._on_accept)
         bbox.rejected.connect(self._on_cancel)
         outer.addWidget(bbox)

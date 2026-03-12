@@ -26,6 +26,8 @@ def generate_events(config: dict, final_notes: List[Note], sections: List[Musica
                     debug_log: Optional[Callable[[str], None]] = None) -> List[KeyEvent]:
     style = config.get('pedal_style')
     if style == 'none':
+        if debug_log is not None:
+            debug_log("[PEDAL] Style: none — no pedal events generated")
         return []
     events = []
 
@@ -35,19 +37,28 @@ def generate_events(config: dict, final_notes: List[Note], sections: List[Musica
             if ai_events:
                 return ai_events
             if debug_log is not None:
-                debug_log("Executing Algorithmic Pedal Fallback.")
+                debug_log("[PEDAL] AI output rejected or unavailable — falling back to adaptive algorithm")
         else:
             if debug_log is not None:
-                debug_log("AI Pedal disabled. Executing Algorithmic Pedal.")
+                debug_log("[PEDAL] AI disabled by user — using adaptive algorithm")
 
         bass_notes = [n for n in final_notes if n.hand == 'left']
         bass_notes.sort(key=lambda n: n.start_time)
         if not bass_notes:
             treble_notes = [n for n in final_notes if n.hand == 'right']
             treble_notes.sort(key=lambda n: n.start_time)
-            return _generate_adaptive_pedal_driver(treble_notes, final_notes)
-        return _generate_adaptive_pedal_driver(bass_notes, final_notes)
+            if debug_log is not None:
+                debug_log(f"[PEDAL] Adaptive driver: using {len(treble_notes)} RIGHT-hand notes (no bass notes)")
+            result = _generate_adaptive_pedal_driver(treble_notes, final_notes, debug_log)
+            return result
+        if debug_log is not None:
+            debug_log(f"[PEDAL] Adaptive driver: using {len(bass_notes)} LEFT-hand bass notes")
+        return _generate_adaptive_pedal_driver(bass_notes, final_notes, debug_log)
 
+    if debug_log is not None:
+        debug_log(f"[PEDAL] Style: {style} | Sections: {len(sections)}")
+
+    sections_no_lh = 0
     for section in sections:
         lh_notes = [n for n in section.notes if n.hand == 'left']
         lh_notes.sort(key=lambda n: n.start_time)
@@ -56,6 +67,7 @@ def generate_events(config: dict, final_notes: List[Note], sections: List[Musica
             end = max(n.end_time for n in section.notes)
             events.append(KeyEvent(start, 1, 'pedal', 'down'))
             events.append(KeyEvent(end, 0, 'pedal', 'up'))
+            sections_no_lh += 1
             continue
 
         if style == 'rhythmic':
@@ -67,6 +79,13 @@ def generate_events(config: dict, final_notes: List[Note], sections: List[Musica
                 events.append(KeyEvent(end, 0, 'pedal', 'up'))
         else:
             _generate_harmonic_pedal(events, lh_notes)
+
+    if debug_log is not None:
+        downs = sum(1 for e in events if e.key_char == 'down')
+        debug_log(
+            f"[PEDAL] {style} result: {len(events)} events ({downs} downs, {len(events) - downs} ups) | "
+            f"sections_without_LH={sections_no_lh}"
+        )
     return events
 
 
@@ -171,13 +190,20 @@ def _generate_ai_pedal(notes: List[Note], debug_log: Optional[Callable[[str], No
     return events
 
 
-def _generate_adaptive_pedal_driver(driver_notes: List[Note], all_notes: List[Note]) -> List[KeyEvent]:
+def _generate_adaptive_pedal_driver(driver_notes: List[Note], all_notes: List[Note],
+                                    debug_log: Optional[Callable[[str], None]] = None) -> List[KeyEvent]:
     events = []
-    if not driver_notes: return events
+    if not driver_notes:
+        if debug_log is not None:
+            debug_log("[PEDAL] Adaptive: no driver notes — returning empty")
+        return events
 
     PEDAL_LAG = 0.05
     UNSAFE_INTERVALS = {1, 6}
     all_note_times = [n.start_time for n in all_notes]
+    gap_lifts = 0
+    interval_repedals = 0
+    vertical_repedals = 0
 
     for i in range(len(driver_notes)):
         curr = driver_notes[i]
@@ -192,13 +218,16 @@ def _generate_adaptive_pedal_driver(driver_notes: List[Note], all_notes: List[No
             events.append(KeyEvent(curr.end_time, 0, 'pedal', 'up'))
             if next_n:
                 events.append(KeyEvent(next_n.start_time, 1, 'pedal', 'down'))
+            gap_lifts += 1
         else:
             should_repedal = False
+            repedal_reason = None
 
             if next_n:
                 linear_interval = abs(next_n.pitch - curr.pitch) % 12
                 if linear_interval in UNSAFE_INTERVALS:
                     should_repedal = True
+                    repedal_reason = 'linear_interval'
 
                 if not should_repedal:
                     lo = bisect.bisect_left(all_note_times, next_n.start_time - 0.05)
@@ -210,14 +239,26 @@ def _generate_adaptive_pedal_driver(driver_notes: List[Note], all_notes: List[No
                             vertical_interval = abs(n.pitch - lowest_pitch) % 12
                             if vertical_interval in UNSAFE_INTERVALS:
                                 should_repedal = True
+                                repedal_reason = 'vertical_interval'
                                 break
 
             if should_repedal and next_n:
                 events.append(KeyEvent(next_n.start_time, 0, 'pedal', 'up'))
                 events.append(KeyEvent(next_n.start_time + PEDAL_LAG, 1, 'pedal', 'down'))
+                if repedal_reason == 'linear_interval':
+                    interval_repedals += 1
+                else:
+                    vertical_repedals += 1
 
     final_end = max(n.end_time for n in driver_notes)
     events.append(KeyEvent(final_end, 0, 'pedal', 'up'))
+
+    if debug_log is not None:
+        downs = sum(1 for e in events if e.key_char == 'down')
+        debug_log(
+            f"[PEDAL] Adaptive result: {len(events)} events ({downs} downs) | "
+            f"gap_lifts={gap_lifts} interval_repedals={interval_repedals} vertical_repedals={vertical_repedals}"
+        )
     return events
 
 
@@ -226,11 +267,12 @@ def _generate_harmonic_pedal(events: List[KeyEvent], bass_notes: List[Note]):
     current_bass_pitch = -1
     for i, note in enumerate(bass_notes):
         is_new_harmony = (note.pitch != current_bass_pitch)
-        prev_end = bass_notes[i-1].end_time if i > 0 else 0
-        has_gap = (note.start_time - prev_end) > 0.15
         if i == 0:
             events.append(KeyEvent(note.start_time, 1, 'pedal', 'down'))
-        elif has_gap:
+        else:
+            prev_end = bass_notes[i-1].end_time
+            has_gap = (note.start_time - prev_end) > 0.15
+        if i > 0 and has_gap:
             events.append(KeyEvent(prev_end, 0, 'pedal', 'up'))
             events.append(KeyEvent(note.start_time, 1, 'pedal', 'down'))
         elif is_new_harmony:

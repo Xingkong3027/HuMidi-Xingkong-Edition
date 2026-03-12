@@ -104,15 +104,11 @@ class GlobalTickMap:
         current_tick = 0
         current_tempo = 500000
         self.tick_map.append((0, 0.0, current_tempo))
-        accumulated_ticks = 0
-        
+
         for msg in merged:
-            accumulated_ticks += msg.time
-            delta_ticks = accumulated_ticks - current_tick
-            delta_sec = mido.tick2second(delta_ticks, self.ticks_per_beat, current_tempo)
-            current_time += delta_sec
-            current_tick = accumulated_ticks
-            
+            current_tick += msg.time
+            current_time += mido.tick2second(msg.time, self.ticks_per_beat, current_tempo)
+
             if msg.type == 'set_tempo':
                 current_tempo = msg.tempo
                 self.tick_map.append((current_tick, current_time, current_tempo))
@@ -239,7 +235,3 @@ class KeyMapper:
         names = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"]
         return f"{names[pitch % 12]}{(pitch // 12) - 1}"
     
-    @property
-    def lower_ctrl_bound(self): return 0 
-    @property
-    def upper_ctrl_bound(self): return 128

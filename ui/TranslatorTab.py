@@ -34,8 +34,7 @@ class TranslatorTab(QWidget):
         self.format_combo.addItems(FormatRegistry.names())
         self.format_combo.setToolTip("Select the Roblox piano sheet format")
         fmt_row.addWidget(fmt_label)
-        fmt_row.addWidget(self.format_combo)
-        fmt_row.addStretch()
+        fmt_row.addWidget(self.format_combo, 1)
         layout.addLayout(fmt_row)
 
         # Sub-tabs

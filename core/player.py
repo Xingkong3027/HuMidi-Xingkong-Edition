@@ -34,12 +34,17 @@ class Player(QObject):
         
         self.compiled_events: List[KeyEvent] = []
         self.event_index = 0
-        
+
         self.stop_event = threading.Event()
-        self.pause_event = threading.Event() 
+        self.pause_event = threading.Event()
         self.key_states: Dict[str, KeyState] = {}
         self.active_pitches: set = set()
         self.pedal_is_down = False
+
+        # Running key-net state for O(1) resume sync (maintained by _execute_chord_event)
+        self._key_net: Dict[str, int] = {}
+        self._key_last_press: Dict[str, KeyEvent] = {}
+        self._pedal_net_down = False
         
         self.start_time = 0.0
         self.total_paused_time = 0.0
@@ -58,17 +63,33 @@ class Player(QObject):
             self.status_updated.emit(msg)
 
     def _apply_humanization_and_compile(self):
+        self._log_debug("\n=== HUMANIZATION PIPELINE ===")
         self.humanizer = Humanizer(self.config, self.debug_log)
         humanized_notes = copy.deepcopy(self.notes)
         left_hand_notes = [n for n in humanized_notes if n.hand == 'left']
         right_hand_notes = [n for n in humanized_notes if n.hand == 'right']
+        unknown_notes = [n for n in humanized_notes if n.hand == 'unknown']
+        self._log_debug(
+            f"[PIPELINE] Input: {len(humanized_notes)} notes total | "
+            f"L={len(left_hand_notes)} R={len(right_hand_notes)} Unknown={len(unknown_notes)}"
+        )
         resync_points = {round(n.start_time, 2) for n in left_hand_notes}.intersection(
             {round(n.start_time, 2) for n in right_hand_notes}
         )
+        self._log_debug(f"[PIPELINE] Resync points (both hands simultaneous): {len(resync_points)}")
+
+        # Track list length so we can emit humanizer-only entries afterward
+        pre_len = len(self.debug_log) if self.debug_log is not None else 0
         self.humanizer.apply_to_hand(left_hand_notes, 'left', resync_points)
         self.humanizer.apply_to_hand(right_hand_notes, 'right', resync_points)
         all_notes = sorted(left_hand_notes + right_hand_notes, key=lambda n: n.start_time)
         self.humanizer.apply_tempo_rubato(all_notes, self.sections)
+        # Humanizer._log() appends to the shared list but doesn't emit — flush those entries now
+        if self.debug_log is not None:
+            for msg in self.debug_log[pre_len:]:
+                self.status_updated.emit(msg)
+
+        self._log_debug("\n=== COMPILATION ===")
         self._compile_event_list(all_notes, self.sections)
 
     def export_compiled_events(self) -> List[KeyEvent]:
@@ -149,9 +170,6 @@ class Player(QObject):
 
     def toggle_pause(self):
         if self.pause_event.is_set():
-            if self.event_index >= len(self.compiled_events):
-                 self.seek(0.0) 
-            
             try:
                 self.keyboard.release(Key.space)
             except: pass
@@ -159,28 +177,40 @@ class Player(QObject):
             pause_duration = time.perf_counter() - self.last_pause_timestamp
             self.total_paused_time += pause_duration
             self.pause_event.clear()
+            self._log_debug(f"[PAUSE] Resuming | paused_for={pause_duration:.3f}s | total_paused={self.total_paused_time:.3f}s | event_index={self.event_index}/{len(self.compiled_events)}")
             self.status_updated.emit("Resuming...")
         else:
             self.last_pause_timestamp = time.perf_counter()
+            playback_time = (self.last_pause_timestamp - self.start_time) - self.total_paused_time
             self.pause_event.set()
+            self._log_debug(f"[PAUSE] Paused at playback_time={playback_time:.3f}s | event_index={self.event_index}/{len(self.compiled_events)}")
             self.status_updated.emit("Paused.")
 
     def seek(self, target_time: float):
-        self.shutdown() 
+        old_idx = self.event_index
+        self.shutdown()
         times = [e.time for e in self.compiled_events]
         new_idx = bisect.bisect_left(times, target_time)
         self.event_index = new_idx
-        
+        self._key_net.clear()
+        self._key_last_press.clear()
+        self._pedal_net_down = False
+
         now = time.perf_counter()
         if self.pause_event.is_set():
             self.total_paused_time = 0.0
             self.start_time = now - target_time
-            self.last_pause_timestamp = now 
+            self.last_pause_timestamp = now
         else:
             self.start_time = now - target_time - self.total_paused_time
-            
+
         self.last_progress_emit_time = now
         self.progress_updated.emit(target_time)
+        remaining = len(self.compiled_events) - new_idx
+        self._log_debug(
+            f"[SEEK] target={target_time:.3f}s | event_index: {old_idx}->{new_idx} | "
+            f"remaining={remaining} events | paused={self.pause_event.is_set()}"
+        )
 
     def _run_countdown(self):
         self.status_updated.emit("Get ready...")
@@ -194,6 +224,11 @@ class Player(QObject):
         use_mistakes   = self.config.get('enable_mistakes', False)
         mistake_chance = self.config.get('mistake_chance', 0) / 100.0
         temp_heap      = []
+        mistakes_injected = 0
+        notes_unmapped = 0
+
+        self._log_debug(f"[COMPILE] Notes to compile: {len(notes_to_play)} | Mistakes: {'ON' if use_mistakes else 'OFF'}"
+                        + (f" ({mistake_chance*100:.1f}%)" if use_mistakes else ""))
 
         for note in notes_to_play:
             scheduled = False
@@ -206,6 +241,7 @@ class Player(QObject):
                         heapq.heappush(temp_heap, KeyEvent(note.start_time, 2, 'press', mk_char, pitch=mistake_pitch))
                         heapq.heappush(temp_heap, KeyEvent(note.start_time + note.duration, 4, 'release', mk_char, pitch=mistake_pitch))
                         scheduled = True
+                        mistakes_injected += 1
 
             if not scheduled:
                 key_data = self.mapper.get_key_data(note.pitch)
@@ -215,26 +251,62 @@ class Player(QObject):
                     heapq.heappush(temp_heap, KeyEvent(note.end_time, 4, 'release', key_char, pitch=note.pitch))
                     if key_char not in self.key_states:
                         self.key_states[key_char] = KeyState(key_char)
+                else:
+                    notes_unmapped += 1
 
+        note_events_count = len(temp_heap)
+
+        self._log_debug(f"[COMPILE] Pedal style: {self.config.get('pedal_style', 'none')}")
         for event in pedal_generator.generate_events(self.config, notes_to_play, sections, self._log_debug):
             heapq.heappush(temp_heap, event)
+        pedal_events_count = len(temp_heap) - note_events_count
 
         self.compiled_events = []
         while temp_heap:
             self.compiled_events.append(heapq.heappop(temp_heap))
 
         self.total_duration = self.compiled_events[-1].time if self.compiled_events else 0.0
+
+        # Compilation summary
+        press_count = sum(1 for e in self.compiled_events if e.action == 'press')
+        release_count = sum(1 for e in self.compiled_events if e.action == 'release')
+        pedal_down = sum(1 for e in self.compiled_events if e.action == 'pedal' and e.key_char == 'down')
+        pedal_up = sum(1 for e in self.compiled_events if e.action == 'pedal' and e.key_char == 'up')
+
+        pitches = [e.pitch for e in self.compiled_events if e.pitch is not None]
+        pitch_range_str = f"{KeyMapper.pitch_to_name(min(pitches))}–{KeyMapper.pitch_to_name(max(pitches))}" if pitches else "none"
+
+        self._log_debug(
+            f"[COMPILE] Result: {len(self.compiled_events)} events | "
+            f"press={press_count} release={release_count} pedal_down={pedal_down} pedal_up={pedal_up}"
+        )
+        self._log_debug(
+            f"[COMPILE] Duration: {self.total_duration:.2f}s | Pitch range: {pitch_range_str} | "
+            f"Unique keys: {len(self.key_states)} | Mistakes: {mistakes_injected} | Unmapped: {notes_unmapped}"
+        )
+        if self.total_duration > 0:
+            self._log_debug(
+                f"[COMPILE] Density: {press_count / self.total_duration:.1f} presses/sec | "
+                f"{pedal_down / self.total_duration:.2f} pedal-downs/sec"
+            )
             
     def _get_mistake_pitch(self, original_pitch: int) -> Optional[int]:
-        is_black = KeyMapper.is_black_key(original_pitch)
-        if is_black: return original_pitch + random.choice([-2, -1, 1, 2])
-        valid = [p for p in [original_pitch-2, original_pitch-1, original_pitch+1, original_pitch+2] if not KeyMapper.is_black_key(p)]
+        candidates = [original_pitch + d for d in (-2, -1, 1, 2)]
+        if KeyMapper.is_black_key(original_pitch):
+            black_pool = [p for p in candidates if KeyMapper.is_black_key(p)]
+            white_pool = [p for p in candidates if not KeyMapper.is_black_key(p)]
+            pool = (black_pool if random.random() < 0.5 else white_pool) or black_pool or white_pool
+            return random.choice(pool) if pool else None
+        valid = [p for p in candidates if not KeyMapper.is_black_key(p)]
         return random.choice(valid) if valid else None
 
     def _run_cursor_loop(self):
         self._log_debug("\n=== ENTERING CURSOR LOOP ===")
         self.current_section_idx = -1
         _was_paused = False
+        self._key_net.clear()
+        self._key_last_press.clear()
+        self._pedal_net_down = False
 
         while not self.stop_event.is_set():
             if self.pause_event.is_set():
@@ -285,11 +357,15 @@ class Player(QObject):
                         self.event_index += 1
                     else:
                         break
-                
+
                 batch.sort(key=lambda x: x.priority)
                 self._execute_chord_event(batch, playback_time)
             else:
-                time.sleep(0.001)
+                sleep_time = min(next_event.time - playback_time - 0.001, self.progress_update_interval)
+                time.sleep(max(0.0005, sleep_time))
+                # Refresh after sleep so the cursor emits current time, not pre-sleep time
+                now = time.perf_counter()
+                playback_time = (now - self.start_time) - self.total_paused_time
 
             if now - self.last_progress_emit_time >= self.progress_update_interval:
                 self.progress_updated.emit(playback_time)
@@ -309,57 +385,63 @@ class Player(QObject):
 
         state_changed = False 
 
-        for event in pedal_events: 
+        for event in pedal_events:
             self._log_debug(f"[ACT] {playback_time:.4f}s | PEDAL {event.key_char.upper()} (Delta: {playback_time - event.time:+.4f}s)")
             self._handle_pedal_event(event)
+            self._pedal_net_down = (event.key_char == 'down')
 
         for event in release_events:
-            self._log_debug(f"[ACT] {playback_time:.4f}s | RELEASE | {event.key_char} (Delta: {playback_time - event.time:+.4f}s)")
+            self._key_net[event.key_char] = self._key_net.get(event.key_char, 0) - 1
+            net = self._key_net.get(event.key_char, 0)
             if event.pitch is not None:
                 self.active_pitches.discard(event.pitch)
                 state_changed = True
-                
+
             key_char = event.key_char
             state = self.key_states.get(key_char)
             if not state: continue
-            
-            base_key = key_char
-            if key_char in self.mapper.SYMBOL_MAP: base_key = self.mapper.SYMBOL_MAP[key_char]
-            
-            state.release() 
-            try: 
-                self.keyboard.release(base_key)
-                self._log_debug(f"      [PHYSICAL] Releasing Key '{base_key}'")
-            except Exception as e:
-                self._log_debug(f"      [PHYSICAL FAILURE] {e}")
+
+            # Only physically release when no other notes still need this key
+            if net <= 0:
+                base_key = key_char
+                if key_char in self.mapper.SYMBOL_MAP: base_key = self.mapper.SYMBOL_MAP[key_char]
+                state.release()
+                try:
+                    self.keyboard.release(base_key)
+                    self._log_debug(f"[ACT] {playback_time:.4f}s | RELEASE | {event.key_char} | [PHYSICAL] Released '{base_key}'")
+                except Exception as e:
+                    self._log_debug(f"[ACT] {playback_time:.4f}s | RELEASE | {event.key_char} | [PHYSICAL FAILURE] {e}")
+            else:
+                self._log_debug(f"[ACT] {playback_time:.4f}s | RELEASE | {event.key_char} | Held (net={net})")
 
         for event in press_events:
-            self._log_debug(f"[ACT] {playback_time:.4f}s | PRESS   | {event.key_char} (Delta: {playback_time - event.time:+.4f}s)")
+            self._key_net[event.key_char] = self._key_net.get(event.key_char, 0) + 1
+            self._key_last_press[event.key_char] = event
             if event.pitch is not None:
                 self.active_pitches.add(event.pitch)
                 state_changed = True
-                
+
             state = self.key_states.get(event.key_char)
             if not state or event.pitch is None: continue
-            
+
             modifiers, base_key = self._get_press_info_from_event(event)
-            
+
             was_physically_down = state.is_physically_down
-            is_sustained_only = state.is_sustained and not state.is_active
             state.press()
-            
+
             try:
                 with self.keyboard.pressed(*modifiers):
-                    if is_sustained_only:
+                    if was_physically_down:
+                        # Key already held by an overlapping note — re-strike for new attack
                         self.keyboard.release(base_key)
-                        self._log_debug(f"      [PHYSICAL] Re-striking Key '{base_key}' (Sustain)")
                         time.sleep(0.001)
                         self.keyboard.press(base_key)
-                    elif not was_physically_down:
+                        self._log_debug(f"[ACT] {playback_time:.4f}s | PRESS   | {event.key_char} | [PHYSICAL] Re-struck '{base_key}' (overlap)")
+                    else:
                         self.keyboard.press(base_key)
-                        self._log_debug(f"      [PHYSICAL] Pressing Key '{base_key}' with modifiers {modifiers}")
-            except Exception as e: 
-                self._log_debug(f"      [PHYSICAL FAILURE] {e}")
+                        self._log_debug(f"[ACT] {playback_time:.4f}s | PRESS   | {event.key_char} | [PHYSICAL] Pressed '{base_key}' {modifiers}")
+            except Exception as e:
+                self._log_debug(f"[ACT] {playback_time:.4f}s | PRESS   | {event.key_char} | [PHYSICAL FAILURE] {e}")
 
         if state_changed:
             self.visualizer_updated.emit(list(self.active_pitches))
@@ -380,25 +462,18 @@ class Player(QObject):
             except Exception: pass
 
     def _sync_active_keys_at_resume(self):
-        """Re-press any notes/pedal that were physically held at the moment of pause."""
-        key_net: Dict[str, int] = {}
-        key_last_press: Dict[str, KeyEvent] = {}
-        pedal_should_be_down = False
+        """Re-press any notes/pedal that were physically held at the moment of pause.
 
-        for i in range(self.event_index):
-            e = self.compiled_events[i]
-            if e.action == 'press':
-                key_net[e.key_char] = key_net.get(e.key_char, 0) + 1
-                key_last_press[e.key_char] = e
-            elif e.action == 'release':
-                key_net[e.key_char] = key_net.get(e.key_char, 0) - 1
-            elif e.action == 'pedal':
-                pedal_should_be_down = (e.key_char == 'down')
-
+        Uses the running _key_net / _key_last_press counters maintained by
+        _execute_chord_event — O(currently-held keys) instead of O(all events).
+        """
         pitch_net: Dict[int, int] = {}
-        for key_char, count in key_net.items():
+        keys_repressed = []
+        for key_char, count in self._key_net.items():
             if count > 0 and key_char in self.key_states:
-                press_event = key_last_press[key_char]
+                press_event = self._key_last_press.get(key_char)
+                if press_event is None:
+                    continue
                 if press_event.pitch is not None:
                     pitch_net[press_event.pitch] = pitch_net.get(press_event.pitch, 0) + 1
                 modifiers, base_key = self._get_press_info_from_event(press_event)
@@ -406,20 +481,30 @@ class Player(QObject):
                 try:
                     with self.keyboard.pressed(*modifiers):
                         self.keyboard.press(base_key)
+                    keys_repressed.append(f"{base_key}(p={press_event.pitch})")
                 except Exception:
                     pass
 
         self.active_pitches = {p for p, c in pitch_net.items() if c > 0}
         self.visualizer_updated.emit(list(self.active_pitches))
 
-        if pedal_should_be_down and not self.pedal_is_down:
+        pedal_restored = False
+        if self._pedal_net_down and not self.pedal_is_down:
             self.pedal_is_down = True
+            pedal_restored = True
             try:
                 self.keyboard.press(Key.space)
             except Exception:
                 pass
 
+        self._log_debug(
+            f"[RESUME] Re-pressed {len(keys_repressed)} keys: [{', '.join(keys_repressed)}] | "
+            f"pedal_restored={pedal_restored} | active_pitches={len(self.active_pitches)}"
+        )
+
     def shutdown(self):
+        active_keys = [k for k, s in self.key_states.items() if s.is_active]
+        self._log_debug(f"[SHUTDOWN] Releasing {len(active_keys)} active keys, pedal_down={self.pedal_is_down}")
         self.status_updated.emit("Releasing all keys...")
         for key_char, state in self.key_states.items():
             try:
@@ -429,7 +514,7 @@ class Player(QObject):
                     self.keyboard.release(base_key)
                 state.release()
             except Exception: pass
-        
+
         if self.pedal_is_down:
             try: self.keyboard.release(Key.space)
             except Exception: pass

@@ -172,6 +172,8 @@ class PlaybackController(QObject):
         self.playback_finished.emit()
 
     def save(self, config: Dict, selected_tracks_info: List, save_dir: str, original_filename: str):
+        if self._save_thread and self._save_thread.isRunning():
+            return
         self._save_thread = QThread()
         self._save_worker = _SaveWorker(config, selected_tracks_info, save_dir, original_filename)
         self._save_worker.moveToThread(self._save_thread)
@@ -196,6 +198,17 @@ class PlaybackController(QObject):
 
         debug_log = self.status_updated.emit if config.get('debug_mode') else None
         if debug_log:
+            debug_log("\n" + "=" * 60)
+            debug_log("=== PLAYBACK SESSION START (MIDI file) ===")
+            debug_log("=" * 60)
+            debug_log("[CONFIG] " + " | ".join(
+                f"{k}={v}" for k, v in sorted(config.items())
+                if k not in ('midi_file',)
+            ))
+            debug_log(f"[CONFIG] midi_file: {config.get('midi_file', 'N/A')}")
+            debug_log(f"[CONFIG] Tracks selected: {len(selected_tracks_info)}")
+            for t, role in selected_tracks_info:
+                debug_log(f"  Track {t.index} ({t.name}): {t.note_count} notes | Role: {role} | Instrument: {t.instrument_name}")
             debug_log("\n=== RAW MIDI DATA (Selected Tracks) ===")
 
         try:
@@ -205,13 +218,8 @@ class PlaybackController(QObject):
             return
 
         self.status_updated.emit("Analyzing musical structure...")
-        analyzer = SectionAnalyzer(final_notes, tempo_map)
+        analyzer = SectionAnalyzer(final_notes, tempo_map, debug_log=debug_log)
         sections = analyzer.analyze()
-
-        if debug_log:
-            debug_log("\n=== MUSICAL STRUCTURE ANALYSIS ===")
-            for i, sec in enumerate(sections):
-                debug_log(f"SECTION {i} [{sec.start_time:.2f}s - {sec.end_time:.2f}s] {sec.articulation_label}")
 
         total_dur = max(n.end_time for n in final_notes) if final_notes else 1.0
         
@@ -241,16 +249,16 @@ class PlaybackController(QObject):
         the normal humanization and playback pipeline.
         """
         self.status_updated.emit("Preparing playback from imported sheet...")
+        debug_log = self.status_updated.emit if config.get('debug_mode') else None
 
         if config.get('simulate_hands'):
-            from core.section_analyzer import assign_hands
             assign_hands(notes)
         else:
             for note in notes:
                 if note.hand == 'unknown':
                     note.hand = 'left' if note.pitch < 60 else 'right'
 
-        analyzer = SectionAnalyzer(notes, tempo_map)
+        analyzer = SectionAnalyzer(notes, tempo_map, debug_log=debug_log)
         sections = analyzer.analyze()
 
         total_dur = max(n.end_time for n in notes) if notes else 1.0
@@ -274,10 +282,21 @@ class PlaybackController(QObject):
         self.status_updated.emit("Initializing playback from pre-compiled serialization...")
         config = loaded_save_data.get('metadata', {}).get('playback_settings', {})
         events_data = loaded_save_data.get('compiled_events', [])
+
+        debug_log = self.status_updated.emit if config.get('debug_mode') else None
+        if debug_log:
+            metadata = loaded_save_data.get('metadata', {})
+            debug_log("\n" + "=" * 60)
+            debug_log("=== PLAYBACK SESSION START (Saved file) ===")
+            debug_log("=" * 60)
+            debug_log(f"[SAVE] Source: {metadata.get('source_midi_filename', 'unknown')}")
+            debug_log(f"[SAVE] Created: {metadata.get('creation_timestamp', 'unknown')}")
+            debug_log(f"[SAVE] Raw events in file: {len(events_data)}")
         
         reconstructed_events = []
         reconstructed_notes = []
         active_presses = {}
+        note_id_counter = 0
         
         for ev in events_data:
             pitch_val = ev.get('pitch')
@@ -304,18 +323,29 @@ class PlaybackController(QObject):
                     hand = 'left' if pitch_val < 60 else 'right'
                     
                     reconstructed_notes.append(Note(
-                        id=0, pitch=pitch_val, velocity=64, 
+                        id=note_id_counter, pitch=pitch_val, velocity=64,
                         start_time=start, duration=dur, hand=hand
                     ))
+                    note_id_counter += 1
                     
         reconstructed_notes = sorted(reconstructed_notes, key=lambda n: n.start_time)
-        
+
         # Enforce chronological ordering on the compiled execution events to prevent instant loop exiting
         reconstructed_events.sort(key=lambda x: (x.time, x.priority))
-        
+
         total_dur = reconstructed_events[-1].time if reconstructed_events else 1.0
-        dummy_tempo = TempoMap([(0, 500000)], []) 
-        
+        dummy_tempo = TempoMap([(0, 500000)], [])
+
+        if debug_log:
+            press_ct = sum(1 for e in reconstructed_events if e.action == 'press')
+            release_ct = sum(1 for e in reconstructed_events if e.action == 'release')
+            pedal_ct = sum(1 for e in reconstructed_events if e.action == 'pedal')
+            debug_log(
+                f"[SAVE] Reconstructed: {len(reconstructed_events)} events "
+                f"(press={press_ct} release={release_ct} pedal={pedal_ct}) | "
+                f"{len(reconstructed_notes)} visual notes | duration={total_dur:.2f}s"
+            )
+
         self.timeline_data_ready.emit(reconstructed_notes, total_dur, dummy_tempo)
         
         self.player_thread = QThread()

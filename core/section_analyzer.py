@@ -23,17 +23,35 @@ def assign_hands(notes: List[Note]):
 
 
 class SectionAnalyzer:
-    def __init__(self, notes: List[Note], tempo_map: TempoMap):
+    def __init__(self, notes: List[Note], tempo_map: TempoMap, debug_log=None):
         self.notes = sorted(notes, key=lambda n: n.start_time)
         self._note_times = [n.start_time for n in self.notes]
         self.tempo_map = tempo_map
+        self._log = debug_log
+
+    def _debug(self, msg: str):
+        if self._log is not None:
+            self._log(msg)
 
     def analyze(self) -> List[MusicalSection]:
-        if not self.notes: return []
+        if not self.notes:
+            self._debug("[SECTIONS] No notes — returning empty section list")
+            return []
+        method = "measures (explicit time signatures)" if self.tempo_map.has_explicit_time_signatures else "silence gaps"
+        self._debug(f"\n=== SECTION ANALYSIS ({method}) ===")
+        self._debug(f"[SECTIONS] Input: {len(self.notes)} notes, time span: {self.notes[0].start_time:.2f}s – {self.notes[-1].end_time:.2f}s")
         if self.tempo_map.has_explicit_time_signatures:
-            return self._analyze_by_measures()
+            sections = self._analyze_by_measures()
         else:
-            return self._analyze_by_silence()
+            sections = self._analyze_by_silence()
+        self._debug(f"[SECTIONS] Result: {len(sections)} sections")
+        for i, sec in enumerate(sections):
+            self._debug(
+                f"  Section {i}: {sec.start_time:.2f}s–{sec.end_time:.2f}s | "
+                f"{len(sec.notes)} notes | {sec.articulation_label} | pace={sec.pace_label} | "
+                f"beats {sec.start_beat:.1f}–{sec.end_beat:.1f}"
+            )
+        return sections
 
     def _analyze_by_silence(self) -> List[MusicalSection]:
         boundaries = self._detect_grand_pauses()

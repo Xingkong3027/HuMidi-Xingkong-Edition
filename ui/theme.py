@@ -97,7 +97,7 @@ BUILTIN_THEMES: dict[str, ThemeColors] = {
 # Uses %(key)s substitution — CSS braces do not need escaping.
 
 _QSS = """\
-QMainWindow, QDialog {
+QMainWindow {
     background-color: %(bg_primary)s;
 }
 QWidget {
@@ -440,13 +440,49 @@ QHeaderView::section {
     text-transform: uppercase;
 }
 
+/* Scroll areas */
+QScrollArea {
+    background-color: transparent;
+    border: none;
+}
+
+/* List widgets */
+QListWidget {
+    background-color: %(bg_primary)s;
+    border: 1px solid %(border)s;
+    border-radius: 6px;
+    color: %(text_primary)s;
+    outline: none;
+}
+QListWidget::item { padding: 4px 8px; border-radius: 3px; }
+QListWidget::item:selected { background-color: %(accent)s; color: #ffffff; }
+QListWidget::item:hover:!selected { background-color: %(bg_input)s; }
+
 /* Splitter */
 QSplitter::handle:horizontal { background-color: %(border)s; width: 1px; }
 
+/* Dialog button boxes */
+QDialogButtonBox QPushButton {
+    min-width: 70px;
+}
+
 /* Dialogs */
+QDialog {
+    background-color: %(bg_primary)s;
+}
 QMessageBox { background-color: %(bg_primary)s; }
 QMessageBox QLabel { color: %(text_primary)s; }
+QMessageBox QPushButton { min-width: 70px; }
 QInputDialog { background-color: %(bg_primary)s; }
+QInputDialog QLineEdit {
+    background-color: %(bg_input)s;
+    border: 1px solid %(border)s;
+    border-radius: 5px;
+    padding: 3px 6px;
+    color: %(text_primary)s;
+    min-height: 24px;
+}
+QInputDialog QLabel { color: %(text_primary)s; }
 
 /* Tooltips */
 QToolTip {
@@ -519,6 +555,8 @@ QFrame#v_sep {
 QFrame#sidebar {
     background-color: %(bg_secondary)s;
     border-right: 1px solid %(border)s;
+    padding: 0px;
+    margin: 0px;
 }
 QLabel#app_title {
     color: %(text_primary)s;
@@ -531,7 +569,8 @@ QFrame#nav_btn {
     background-color: transparent;
     border: none;
     border-left: 3px solid transparent;
-    min-height: 70px;
+    padding: 0px;
+    margin: 0px;
 }
 QFrame#nav_btn[hovered="true"] {
     background-color: %(nav_hover_bg)s;
@@ -562,7 +601,6 @@ QLabel#nav_label {
 }
 QLabel#nav_label[highlighted="true"] {
     color: %(text_primary)s;
-    font-weight: 600;
 }
 QLabel#nav_label:disabled {
     color: %(dis_text)s;
@@ -577,6 +615,26 @@ QFrame#section_card {
     background-color: %(bg_secondary)s;
     border: 1px solid %(border)s;
     border-radius: 10px;
+}
+
+/* ── Collapsed mini strip ────────────────────────────────────── */
+QFrame#collapsed_strip {
+    background-color: %(bg_secondary)s;
+    border-bottom: 1px solid %(border)s;
+}
+
+/* ── Collapse toggle button ──────────────────────────────────── */
+QPushButton#collapse_btn {
+    background: transparent;
+    border: 1px solid %(border)s;
+    border-radius: 4px;
+    color: %(text_secondary)s;
+    font-size: 7pt;
+    padding: 1px 4px;
+}
+QPushButton#collapse_btn:hover {
+    background-color: %(nav_hover_bg)s;
+    color: %(text_primary)s;
 }
 """
 

@@ -18,9 +18,10 @@ from ui.LoadSaveDialog import LoadSaveDialog
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("HuMidi v1.3")
+        self.setWindowTitle("HuMidi v2.0 Beta")
         self.setMinimumWidth(820)
-        self.setMinimumHeight(520)
+        self.setMinimumHeight(485)
+        self.resize(self.minimumWidth(), self.minimumHeight())
 
         # Set specific Icon base execution path (Required for OS Contexts)
         base_path = sys._MEIPASS if getattr(sys, 'frozen', False) else os.path.dirname(os.path.abspath(__file__))
@@ -41,14 +42,17 @@ class MainWindow(QMainWindow):
         self.current_notes = []
         self._note_start_times = []
         self.total_song_duration_sec = 1.0
+        self._max_note_duration = 0.0
 
         self._bind_signals()
-        
+
         # Load initialization data
         loaded_cfg = self.config_manager.load()
         if loaded_cfg:
             self.ui.load_config_to_ui(loaded_cfg, self.config_manager.save_dir)
-            self.ui.hk_label.setText(f"Hotkey: {self.hotkey_manager._format_key_string(self.hotkey_manager.current_key)}")
+            self.ui.settings_tab.hk_label.setText(
+                f"Hotkey: {self.hotkey_manager._format_key_string(self.hotkey_manager.current_key)}"
+            )
         else:
             self.ui.reset_controls_to_default()
 
@@ -58,24 +62,24 @@ class MainWindow(QMainWindow):
         self.ui.stop_button.clicked.connect(self.handle_stop)
         self.ui.save_button.clicked.connect(self.handle_save)
         self.ui.reset_button.clicked.connect(self.ui.reset_controls_to_default)
-        self.ui.browse_button.clicked.connect(self.select_file)
-        self.ui.load_saved_btn.clicked.connect(self.open_load_dialog)
-        self.ui.save_browse_btn.clicked.connect(self._browse_save_dir)
+        self.ui.playback_tab.browse_button.clicked.connect(self.select_file)
+        self.ui.playback_tab.load_saved_btn.clicked.connect(self.open_load_dialog)
+        self.ui.settings_tab.save_browse_btn.clicked.connect(self._browse_save_dir)
         self.ui._collapsed_load_btn.clicked.connect(self.select_file)
         self.ui._collapsed_load_saved_btn.clicked.connect(self.open_load_dialog)
         self.ui._collapsed_save_btn.clicked.connect(self.handle_save)
-        self.ui.hk_btn.clicked.connect(self._change_hotkey)
-        
+        self.ui.settings_tab.hk_btn.clicked.connect(self._change_hotkey)
+
         # View manipulations bound to Window behavior
-        self.ui.always_top_check.toggled.connect(self._toggle_always_on_top)
-        self.ui.opacity_slider.valueChanged.connect(self._change_opacity)
+        self.ui.settings_tab.always_top_check.toggled.connect(self._toggle_always_on_top)
+        self.ui.settings_tab.opacity_slider.valueChanged.connect(self._change_opacity)
 
         # Settings-tab persistence — save immediately on change so closing without playing doesn't lose them
-        self.ui.always_top_check.toggled.connect(self._save_config)
-        self.ui.opacity_slider.valueChanged.connect(self._save_config)
-        self.ui.timeline_vis_check.toggled.connect(self._save_config)
-        self.ui.piano_vis_check.toggled.connect(self._save_config)
-        self.ui.use_ai_pedal_check.toggled.connect(self._save_config)
+        self.ui.settings_tab.always_top_check.toggled.connect(self._save_config)
+        self.ui.settings_tab.opacity_slider.valueChanged.connect(self._save_config)
+        self.ui.settings_tab.timeline_vis_check.toggled.connect(self._save_config)
+        self.ui.settings_tab.piano_vis_check.toggled.connect(self._save_config)
+        self.ui.settings_tab.use_ai_pedal_check.toggled.connect(self._save_config)
 
         # Translator tab
         self.ui.translator_tab.play_sheet_requested.connect(self._on_play_sheet)
@@ -119,19 +123,19 @@ class MainWindow(QMainWindow):
         path = QFileDialog.getExistingDirectory(self, "Select Save Directory", self.config_manager.save_dir)
         if path:
             self.config_manager.set_save_dir(path)
-            self.ui.save_path_input.setText(path)
+            self.ui.settings_tab.save_path_input.setText(path)
             self._save_config()
 
     def _change_hotkey(self):
-        self.ui.hk_btn.setText("Listening...")
-        self.ui.hk_btn.setEnabled(False)
-        self.hotkey_manager.start_binding()
         QMessageBox.information(self, "Bind Key", "Press the key you want to bind now.")
+        self.ui.settings_tab.hk_btn.setText("Listening...")
+        self.ui.settings_tab.hk_btn.setEnabled(False)
+        self.hotkey_manager.start_binding()
 
     def _on_hotkey_bound(self, key_str):
-        self.ui.hk_label.setText(f"Hotkey: {key_str}")
-        self.ui.hk_btn.setText("Change")
-        self.ui.hk_btn.setEnabled(True)
+        self.ui.settings_tab.hk_label.setText(f"Hotkey: {key_str}")
+        self.ui.settings_tab.hk_btn.setText("Change")
+        self.ui.settings_tab.hk_btn.setEnabled(True)
         self._sync_play_button()
 
     def _sync_play_button(self):
@@ -168,8 +172,9 @@ class MainWindow(QMainWindow):
     
     def _on_visual_scrub(self, time):
         active_pitches = set()
+        lo = bisect.bisect_left(self._note_start_times, time - self._max_note_duration)
         hi = bisect.bisect_right(self._note_start_times, time)
-        for note in self.current_notes[:hi]:
+        for note in self.current_notes[lo:hi]:
             if note.end_time > time:
                 active_pitches.add(note.pitch)
         self.ui.piano_widget.set_active_pitches(list(active_pitches))
@@ -178,6 +183,7 @@ class MainWindow(QMainWindow):
     def _on_timeline_data_ready(self, notes, total_dur, tempo_map):
         self.current_notes = notes
         self._note_start_times = [n.start_time for n in notes]
+        self._max_note_duration = max((n.duration for n in notes), default=0.0)
         self.total_song_duration_sec = total_dur
         self.ui.timeline_widget.set_data(notes, total_dur, tempo_map)
         self.ui.reset_timeline_position()
@@ -192,10 +198,9 @@ class MainWindow(QMainWindow):
         if filepath:
             self.loaded_save_data = None
             self.loaded_save_filename = None
-            self.ui.playback_group.setEnabled(True)
-            self.ui.humanization_group.setEnabled(True)
-            self.ui.file_path_label.setText(os.path.basename(filepath))
-            self.ui.file_path_label.setToolTip(filepath)
+            self.ui.playback_tab.playback_group.setEnabled(True)
+            self.ui.playback_tab.humanization_group.setEnabled(True)
+            self.ui.update_file_label(os.path.basename(filepath), filepath)
             self.ui.log_output.append(f"Selected file: {filepath}")
             self._parse_and_select_tracks(filepath)
             
@@ -207,12 +212,10 @@ class MainWindow(QMainWindow):
                 self.loaded_save_data = data
                 self.loaded_save_filename = os.path.basename(selected_file)
                 
-                self.ui.file_path_label.setText(f"{self.loaded_save_filename}")
-                self.ui.file_path_label.setToolTip(selected_file)
-                
-                self.ui.playback_group.setEnabled(False)
-                self.ui.humanization_group.setEnabled(False)
-                self.ui.save_button.setEnabled(False)
+                self.ui.update_file_label(self.loaded_save_filename, selected_file)
+                self.ui.playback_tab.playback_group.setEnabled(False)
+                self.ui.playback_tab.humanization_group.setEnabled(False)
+                self.ui._set_save_enabled(False)
                 self.ui.play_button.setEnabled(True)
                 self.ui.log_output.append(f"Loaded save file: {self.loaded_save_filename}")
 
@@ -230,12 +233,12 @@ class MainWindow(QMainWindow):
             self.parsed_tempo_map = tempo_map 
             self.ui.log_output.append(f"Tracks selected: {len(self.selected_tracks_info)}")
             self.ui.play_button.setEnabled(True)
-            self.ui.save_button.setEnabled(True)
+            self.ui._set_save_enabled(True)
         else:
             self.ui.log_output.append("Track selection cancelled.")
             self.selected_tracks_info = None
             self.ui.play_button.setEnabled(False)
-            self.ui.save_button.setEnabled(False)
+            self.ui._set_save_enabled(False)
 
     # --- Translator ---
     def _on_play_sheet(self, text: str, format_name: str, bpm: int, humanize: bool):
@@ -247,7 +250,7 @@ class MainWindow(QMainWindow):
             QMessageBox.critical(self, "Unknown Format", f"No handler found for format: {format_name}")
             return
 
-        use_88 = self.ui.use_88_key_check.isChecked()
+        use_88 = self.ui.playback_tab.use_88_key_check.isChecked()
         key_mapper = KeyMapper(use_88_key_layout=use_88)
 
         try:
@@ -297,7 +300,7 @@ class MainWindow(QMainWindow):
             QMessageBox.critical(self, "Unknown Format", f"No handler found for format: {format_name}")
             return
 
-        use_88 = self.ui.use_88_key_check.isChecked()
+        use_88 = self.ui.playback_tab.use_88_key_check.isChecked()
         key_mapper = KeyMapper(use_88_key_layout=use_88)
         tempo_map = getattr(self, 'parsed_tempo_map', TempoMap([(0, 500000)], []))
 
@@ -322,7 +325,7 @@ class MainWindow(QMainWindow):
             return
             
         self._save_config()
-        original_filename = os.path.basename(self.ui.file_path_label.toolTip())
+        original_filename = os.path.basename(self.ui.playback_tab.file_path_label.toolTip())
         self.playback_controller.save(config, self.selected_tracks_info, self.config_manager.save_dir, original_filename)
 
     def _on_save_successful(self, filepath: str, message: str):
@@ -343,7 +346,6 @@ class MainWindow(QMainWindow):
             if not self.selected_tracks_info:
                 QMessageBox.warning(self, "No Tracks", "Please select a MIDI file and choose tracks first.")
                 return
-            self._save_config()
             self.playback_controller.play(config, self.selected_tracks_info)
             
         self.ui.set_controls_enabled(False, bool(self.loaded_save_data))

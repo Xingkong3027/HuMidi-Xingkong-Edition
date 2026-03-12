@@ -41,6 +41,8 @@ class TrackSelectionDialog(QDialog):
         layout.addWidget(self.table)
 
         self.table.setRowCount(len(self.tracks))
+        self.table.verticalHeader().setMinimumSectionSize(36)
+        self.table.verticalHeader().setDefaultSectionSize(36)
         self.checkboxes = []
         self.role_combos = []
 
@@ -70,6 +72,8 @@ class TrackSelectionDialog(QDialog):
             self.table.setItem(i, 3, notes_item)
 
             combo = QComboBox()
+            combo.setStyleSheet("QComboBox { min-height: 0px; padding: 2px 8px; }")
+            combo.setFixedHeight(28)
             combo.addItems(["Auto-Detect", "Left Hand", "Right Hand"])
             self.table.setCellWidget(i, 4, combo)
             self.role_combos.append(combo)
@@ -81,6 +85,9 @@ class TrackSelectionDialog(QDialog):
         buttons = QDialogButtonBox(
             QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
         )
+        ok_btn = buttons.button(QDialogButtonBox.StandardButton.Ok)
+        if ok_btn:
+            ok_btn.setObjectName("save_button")
         buttons.accepted.connect(self.accept)
         buttons.rejected.connect(self.reject)
         layout.addWidget(buttons)
