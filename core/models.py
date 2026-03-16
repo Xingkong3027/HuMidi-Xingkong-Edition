@@ -75,9 +75,3 @@ class KeyState:
     def is_physically_down(self) -> bool:
         return self.is_active
 
-@dataclass
-class Finger:
-    id: int
-    hand: str
-    current_pitch: Optional[int] = None
-    last_press_time: float = -1.0

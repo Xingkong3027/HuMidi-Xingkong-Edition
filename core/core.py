@@ -2,7 +2,7 @@ import mido
 import bisect
 from collections import defaultdict
 from typing import List, Tuple, Dict, Optional
-from models import Note, MidiTrack
+from core.models import Note, MidiTrack
 from pynput.keyboard import Key
 
 def get_time_groups(notes: List[Note], threshold: float = 0.015) -> List[List[Note]]:
@@ -22,6 +22,9 @@ class TempoMap:
         self.time_signatures = sorted(time_signatures, key=lambda x: x[0])
         self.beat_map = [] 
         self._build_beat_map()
+        self._beat_map_times = [e[0] for e in self.beat_map]
+        self._beat_map_beats = [e[1] for e in self.beat_map]
+        self._event_times = [e[0] for e in self.events]
         self.has_explicit_time_signatures = len(time_signatures) > 0 and not (len(time_signatures) == 1 and time_signatures[0][0] == 0 and time_signatures[0][1] == 4)
 
     def _build_beat_map(self):
@@ -43,7 +46,7 @@ class TempoMap:
             current_tempo = new_tempo
 
     def time_to_beat(self, t: float) -> float:
-        idx = bisect.bisect_right([e[0] for e in self.beat_map], t) - 1
+        idx = bisect.bisect_right(self._beat_map_times, t) - 1
         if idx < 0: return 0.0
         
         start_time, start_beat, tempo = self.beat_map[idx]
@@ -52,7 +55,7 @@ class TempoMap:
         return start_beat + (dt / sec_per_beat)
         
     def beat_to_time(self, b: float) -> float:
-        idx = bisect.bisect_right([e[1] for e in self.beat_map], b) - 1
+        idx = bisect.bisect_right(self._beat_map_beats, b) - 1
         if idx < 0: return 0.0
         
         start_time, start_beat, tempo = self.beat_map[idx]
@@ -61,7 +64,7 @@ class TempoMap:
         return start_time + (dt_beats * sec_per_beat)
 
     def get_tempo_at(self, time: float) -> int:
-        idx = bisect.bisect_right([e[0] for e in self.events], time) - 1
+        idx = bisect.bisect_right(self._event_times, time) - 1
         if idx < 0: return 500000
         return self.events[idx][1]
 
@@ -82,7 +85,7 @@ class TempoMap:
             
             current_numerator = active_ts[1]
             beat_len_factor = 4.0 / active_ts[2]
-            measure_len_beats = current_numerator * beat_len_factor
+            measure_len_beats = max(0.0625, current_numerator * beat_len_factor)
             
             measure_end_beat = measure_start_beat + measure_len_beats
             measure_end_time = self.beat_to_time(measure_end_beat)
@@ -101,34 +104,32 @@ class GlobalTickMap:
         current_tick = 0
         current_tempo = 500000
         self.tick_map.append((0, 0.0, current_tempo))
-        accumulated_ticks = 0
-        
+
         for msg in merged:
-            accumulated_ticks += msg.time
-            delta_ticks = accumulated_ticks - current_tick
-            delta_sec = mido.tick2second(delta_ticks, self.ticks_per_beat, current_tempo)
-            current_time += delta_sec
-            current_tick = accumulated_ticks
-            
+            current_tick += msg.time
+            current_time += mido.tick2second(msg.time, self.ticks_per_beat, current_tempo)
+
             if msg.type == 'set_tempo':
                 current_tempo = msg.tempo
                 self.tick_map.append((current_tick, current_time, current_tempo))
             elif msg.type == 'time_signature':
                 self.time_signatures.append((current_time, msg.numerator, msg.denominator))
+        self._tick_values = [e[0] for e in self.tick_map]
 
     def tick_to_time(self, tick: int) -> float:
-        last_tick, last_time, tempo = self.tick_map[0]
-        for t_tick, t_time, t_tempo in self.tick_map:
-            if tick >= t_tick: last_tick, last_time, tempo = t_tick, t_time, t_tempo
-            else: break
-        delta_ticks = tick - last_tick
-        return last_time + mido.tick2second(delta_ticks, self.ticks_per_beat, tempo)
+        idx = bisect.bisect_right(self._tick_values, tick) - 1
+        if idx < 0: idx = 0
+        last_tick, last_time, tempo = self.tick_map[idx]
+        return last_time + mido.tick2second(tick - last_tick, self.ticks_per_beat, tempo)
 
 class MidiParser:
     @staticmethod
     def parse_structure(filepath: str, tempo_scale: float = 1.0, debug_log: Optional[List[str]] = None) -> Tuple[List[MidiTrack], TempoMap]:
         try:
-            mid = mido.MidiFile(filepath)
+            try:
+                mid = mido.MidiFile(filepath, charset='utf-8')
+            except UnicodeDecodeError:
+                mid = mido.MidiFile(filepath)
         except Exception as e:
             raise IOError(f"Could not read MIDI file: {e}")
             
@@ -161,7 +162,7 @@ class MidiParser:
                         start_sec = global_map.tick_to_time(note_data['start_tick'])
                         end_sec = global_map.tick_to_time(current_abs_tick)
                         duration = end_sec - start_sec
-                        if duration > 0.01:
+                        if duration > 0:
                             scaled_start = start_sec / tempo_scale
                             scaled_duration = duration / tempo_scale
                             notes.append(Note(note_id_counter, msg.note, note_data['vel'], scaled_start, scaled_duration, 'unknown', i, msg.channel))
@@ -217,11 +218,12 @@ class KeyMapper:
             white_key_index += 1
 
     def get_key_data(self, pitch: int) -> Optional[Dict]:
-        if pitch < self.min_pitch:
-            while pitch < self.min_pitch: pitch += 12
-        elif pitch > self.max_pitch:
-            while pitch > self.max_pitch: pitch -= 12
-        return self.key_map.get(pitch)
+        p = pitch
+        if p < self.min_pitch:
+            while p < self.min_pitch: p += 12
+        elif p > self.max_pitch:
+            while p > self.max_pitch: p -= 12
+        return self.key_map.get(p)
 
     def get_key_for_pitch(self, pitch: int) -> Optional[str]:
         data = self.get_key_data(pitch)
@@ -236,7 +238,3 @@ class KeyMapper:
         names = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"]
         return f"{names[pitch % 12]}{(pitch // 12) - 1}"
     
-    @property
-    def lower_ctrl_bound(self): return 0 
-    @property
-    def upper_ctrl_bound(self): return 128
