@@ -69,6 +69,10 @@ class SettingsTab(QWidget):
         ov_grid.addWidget(self.opacity_slider,   1, 1)
         ov_content.addLayout(ov_grid)
         left_col.addWidget(ov_card)
+
+        self.check_update_btn = QPushButton("Check for updates")
+        self.check_update_btn.setToolTip("Check GitHub for a newer version of HuMidi")
+        left_col.addWidget(self.check_update_btn)
         left_col.addStretch()
 
         # Visualizer card

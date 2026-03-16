@@ -126,7 +126,10 @@ class MidiParser:
     @staticmethod
     def parse_structure(filepath: str, tempo_scale: float = 1.0, debug_log: Optional[List[str]] = None) -> Tuple[List[MidiTrack], TempoMap]:
         try:
-            mid = mido.MidiFile(filepath)
+            try:
+                mid = mido.MidiFile(filepath, charset='utf-8')
+            except UnicodeDecodeError:
+                mid = mido.MidiFile(filepath)
         except Exception as e:
             raise IOError(f"Could not read MIDI file: {e}")
             

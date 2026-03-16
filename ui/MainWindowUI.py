@@ -2,6 +2,7 @@ from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QPushButton,
                              QCheckBox, QSlider, QLabel, QStackedWidget, QFrame,
                              QSizePolicy)
 from PyQt6.QtCore import Qt, QObject
+from PyQt6.QtGui import QColor
 
 from ui.widgets import NavButton
 from ui.PlaybackTab import PlaybackTab
@@ -134,7 +135,7 @@ class MainWindowUI(QObject):
         transport_layout.addWidget(self.scrubber_slider)
 
         btn_row = QHBoxLayout()
-        btn_row.setSpacing(10)
+        btn_row.setSpacing(5)
 
         self.play_button = QPushButton("▶  Play")
         self.play_button.setObjectName("play_button")
@@ -215,8 +216,14 @@ class MainWindowUI(QObject):
         self.timeline_widget.right_hand_color.setNamedColor(theme.accent_play)
         self.timeline_widget.right_hand_color.setAlpha(210)
         self.timeline_widget.bg_color.setNamedColor(theme.bg_primary)
+        pedal_q = QColor(theme.pedal_color)
+        pedal_q.setAlpha(180)
+        self.timeline_widget.pedal_color = pedal_q
         self.timeline_widget.cached_background = None
         self.timeline_widget.update()
+        piano_pedal_q = QColor(theme.pedal_color)
+        self.piano_widget.pedal_color = piano_pedal_q
+        self.piano_widget.update()
 
     def _open_theme_dialog(self) -> None:
         from ui.ThemeDialog import ThemeDialog
@@ -236,6 +243,7 @@ class MainWindowUI(QObject):
 
     def _on_piano_toggle(self, checked: bool) -> None:
         self.piano_widget.setVisible(checked)
+        self.timeline_widget.set_show_pedal(checked)
         self._update_visualizer_availability()
 
     def _update_visualizer_availability(self) -> None:

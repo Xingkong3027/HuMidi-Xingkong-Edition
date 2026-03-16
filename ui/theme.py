@@ -46,6 +46,7 @@ class ThemeColors:
     border:        str = "#32324a"   # all borders
     accent_play:   str = "#4ecb8d"   # play button
     accent_stop:   str = "#e05c5c"   # stop / danger
+    pedal_color:   str = "#e8a020"   # sustain pedal indicator
     builtin: bool = field(default=False, repr=False)
 
     def to_dict(self) -> dict:
@@ -67,6 +68,7 @@ BUILTIN_THEMES: dict[str, ThemeColors] = {
         bg_primary="#1c1c2e", bg_secondary="#21213a", bg_input="#24243e",
         accent="#5b8dee", text_primary="#dcdcf0", text_secondary="#7878a0",
         border="#32324a", accent_play="#4ecb8d", accent_stop="#e05c5c",
+        pedal_color="#e8a020",
         builtin=True,
     ),
     "Light": ThemeColors(
@@ -74,6 +76,7 @@ BUILTIN_THEMES: dict[str, ThemeColors] = {
         bg_primary="#f0f0f8", bg_secondary="#ffffff", bg_input="#fafafa",
         accent="#4a7adb", text_primary="#1a1a2e", text_secondary="#6868a0",
         border="#d0d0e8", accent_play="#2a9a60", accent_stop="#cc3333",
+        pedal_color="#d08010",
         builtin=True,
     ),
     "Midnight": ThemeColors(
@@ -81,6 +84,7 @@ BUILTIN_THEMES: dict[str, ThemeColors] = {
         bg_primary="#0d1117", bg_secondary="#161b22", bg_input="#1c2230",
         accent="#58a6ff", text_primary="#e6edf3", text_secondary="#8b949e",
         border="#30363d", accent_play="#3fb950", accent_stop="#f85149",
+        pedal_color="#f0a030",
         builtin=True,
     ),
     "Mocha": ThemeColors(
@@ -88,6 +92,7 @@ BUILTIN_THEMES: dict[str, ThemeColors] = {
         bg_primary="#1c1614", bg_secondary="#26201e", bg_input="#302824",
         accent="#e6a050", text_primary="#ece0d0", text_secondary="#907060",
         border="#3c3028", accent_play="#7ab860", accent_stop="#e05060",
+        pedal_color="#c8901a",
         builtin=True,
     ),
 }

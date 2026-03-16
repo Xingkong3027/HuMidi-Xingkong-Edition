@@ -10,6 +10,22 @@ from core.models import Note, KeyEvent
 from core.core import MidiParser, TempoMap
 from core.section_analyzer import SectionAnalyzer, assign_hands
 from core.player import Player
+import core.pedal_generator as pedal_generator
+
+
+def _extract_pedal_intervals(pedal_events) -> list:
+    """Convert a flat list of pedal KeyEvents into (start_sec, end_sec) interval tuples."""
+    intervals = []
+    down_time = None
+    for ev in pedal_events:
+        if ev.action != 'pedal':
+            continue
+        if ev.key_char == 'down':
+            down_time = ev.time
+        elif ev.key_char == 'up' and down_time is not None:
+            intervals.append((down_time, ev.time))
+            down_time = None
+    return intervals
 
 
 def _prepare_notes(config: Dict, selected_tracks_info: List, log=None):
@@ -128,8 +144,10 @@ class PlaybackController(QObject):
     auto_paused = Signal()
     error_occurred = Signal(str)
     
+    pedal_updated = Signal(bool)          # Bridged from Player: True=down, False=up
     # Custom signals for specific orchestration events
     timeline_data_ready = Signal(list, float, object) # notes, total_duration, tempo_map
+    pedal_data_ready = Signal(list)       # List of (start_sec, end_sec) pedal intervals
     save_successful = Signal(str, str) # filepath, success message
     save_failed = Signal(str) # error message
 
@@ -222,24 +240,31 @@ class PlaybackController(QObject):
         sections = analyzer.analyze()
 
         total_dur = max(n.end_time for n in final_notes) if final_notes else 1.0
-        
+
         # Pass the processed timeline metrics back to the GUI
         self.timeline_data_ready.emit(final_notes, total_dur, tempo_map)
+
+        try:
+            _pedal_evs = pedal_generator.generate_events(config, final_notes, sections)
+            self.pedal_data_ready.emit(_extract_pedal_intervals(_pedal_evs))
+        except Exception:
+            self.pedal_data_ready.emit([])
 
         self.player_thread = QThread()
         self.player = Player(config, final_notes, sections, tempo_map)
         self.player.moveToThread(self.player_thread)
-        
+
         self.player_thread.started.connect(self.player.play)
-        
+
         # Bridge Player signals through the Orchestrator
         self.player.playback_finished.connect(self._on_playback_finished)
         self.player.status_updated.connect(self.status_updated.emit)
         self.player.progress_updated.connect(self.progress_updated.emit)
         self.player.visualizer_updated.connect(self.visualizer_updated.emit)
+        self.player.pedal_updated.connect(self.pedal_updated.emit)
         self.player.auto_paused.connect(self.auto_paused.emit)
         self.player.error_occurred.connect(self.error_occurred.emit)
-        
+
         self.player_thread.start()
 
     def play_from_notes(self, config: Dict, notes: List[Note], tempo_map: TempoMap):
@@ -264,6 +289,12 @@ class PlaybackController(QObject):
         total_dur = max(n.end_time for n in notes) if notes else 1.0
         self.timeline_data_ready.emit(notes, total_dur, tempo_map)
 
+        try:
+            _pedal_evs = pedal_generator.generate_events(config, notes, sections)
+            self.pedal_data_ready.emit(_extract_pedal_intervals(_pedal_evs))
+        except Exception:
+            self.pedal_data_ready.emit([])
+
         self.player_thread = QThread()
         self.player = Player(config, notes, sections, tempo_map)
         self.player.moveToThread(self.player_thread)
@@ -273,6 +304,7 @@ class PlaybackController(QObject):
         self.player.status_updated.connect(self.status_updated.emit)
         self.player.progress_updated.connect(self.progress_updated.emit)
         self.player.visualizer_updated.connect(self.visualizer_updated.emit)
+        self.player.pedal_updated.connect(self.pedal_updated.emit)
         self.player.auto_paused.connect(self.auto_paused.emit)
         self.player.error_occurred.connect(self.error_occurred.emit)
 
@@ -347,19 +379,23 @@ class PlaybackController(QObject):
             )
 
         self.timeline_data_ready.emit(reconstructed_notes, total_dur, dummy_tempo)
-        
+
+        _pedal_evs = [ev for ev in reconstructed_events if ev.action == 'pedal']
+        self.pedal_data_ready.emit(_extract_pedal_intervals(_pedal_evs))
+
         self.player_thread = QThread()
         self.player = Player(config, [], [], dummy_tempo)
         self.player.load_compiled_events(reconstructed_events, total_dur)
 
         self.player.moveToThread(self.player_thread)
         self.player_thread.started.connect(self.player.play_saved_events)
-        
+
         self.player.playback_finished.connect(self._on_playback_finished)
         self.player.status_updated.connect(self.status_updated.emit)
         self.player.progress_updated.connect(self.progress_updated.emit)
         self.player.visualizer_updated.connect(self.visualizer_updated.emit)
+        self.player.pedal_updated.connect(self.pedal_updated.emit)
         self.player.auto_paused.connect(self.auto_paused.emit)
         self.player.error_occurred.connect(self.error_occurred.emit)
-        
+
         self.player_thread.start()

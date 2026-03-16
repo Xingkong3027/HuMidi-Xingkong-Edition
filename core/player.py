@@ -20,6 +20,7 @@ class Player(QObject):
     progress_updated = Signal(float)
     playback_finished = Signal()
     visualizer_updated = Signal(list)
+    pedal_updated = Signal(bool)
     auto_paused = Signal()
     error_occurred = Signal(str)
 
@@ -388,7 +389,12 @@ class Player(QObject):
         for event in pedal_events:
             self._log_debug(f"[ACT] {playback_time:.4f}s | PEDAL {event.key_char.upper()} (Delta: {playback_time - event.time:+.4f}s)")
             self._handle_pedal_event(event)
-            self._pedal_net_down = (event.key_char == 'down')
+            new_pedal_state = (event.key_char == 'down')
+            if new_pedal_state != self._pedal_net_down:
+                self._pedal_net_down = new_pedal_state
+                self.pedal_updated.emit(self._pedal_net_down)
+            else:
+                self._pedal_net_down = new_pedal_state
 
         for event in release_events:
             self._key_net[event.key_char] = self._key_net.get(event.key_char, 0) - 1

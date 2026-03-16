@@ -9,16 +9,19 @@ from PyQt6.QtGui import QIcon
 from core.core import MidiParser, KeyMapper, TempoMap
 from core.translator import FormatRegistry
 from managers.HotkeyManager import HotkeyManager
+from managers.UpdateManager import UpdateChecker, DownloadWorker
 from controllers.PlaybackController import PlaybackController
 from managers.ConfigManager import ConfigManager
 from ui.MainWindowUI import MainWindowUI
 from ui.TrackSelectionDialog import TrackSelectionDialog
 from ui.LoadSaveDialog import LoadSaveDialog
 
+APP_VERSION = "1.3"
+
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("HuMidi v2.0 Beta")
+        self.setWindowTitle(f"HuMidi v{APP_VERSION}")
         self.setMinimumWidth(820)
         self.setMinimumHeight(485)
         self.resize(self.minimumWidth(), self.minimumHeight())
@@ -43,6 +46,7 @@ class MainWindow(QMainWindow):
         self._note_start_times = []
         self.total_song_duration_sec = 1.0
         self._max_note_duration = 0.0
+        self.current_pedal_intervals = []
 
         self._bind_signals()
 
@@ -55,6 +59,10 @@ class MainWindow(QMainWindow):
             )
         else:
             self.ui.reset_controls_to_default()
+
+        self._update_checker = UpdateChecker(APP_VERSION)
+        self._update_checker.update_available.connect(self._on_update_available)
+        self._update_checker.start()
 
     def _bind_signals(self):
         # UI controls bound strictly to Execution/Router logic
@@ -69,6 +77,7 @@ class MainWindow(QMainWindow):
         self.ui._collapsed_load_saved_btn.clicked.connect(self.open_load_dialog)
         self.ui._collapsed_save_btn.clicked.connect(self.handle_save)
         self.ui.settings_tab.hk_btn.clicked.connect(self._change_hotkey)
+        self.ui.settings_tab.check_update_btn.clicked.connect(self._manual_check_update)
 
         # View manipulations bound to Window behavior
         self.ui.settings_tab.always_top_check.toggled.connect(self._toggle_always_on_top)
@@ -98,9 +107,11 @@ class MainWindow(QMainWindow):
         self.playback_controller.progress_updated.connect(self.update_progress)
         self.playback_controller.playback_finished.connect(self.on_playback_finished)
         self.playback_controller.visualizer_updated.connect(lambda p: self.ui.piano_widget.set_active_pitches(p))
+        self.playback_controller.pedal_updated.connect(self.ui.piano_widget.set_pedal_active)
         self.playback_controller.auto_paused.connect(self._on_auto_paused)
         self.playback_controller.error_occurred.connect(self.show_error_dialog)
         self.playback_controller.timeline_data_ready.connect(self._on_timeline_data_ready)
+        self.playback_controller.pedal_data_ready.connect(self._on_pedal_data_ready)
         self.playback_controller.save_successful.connect(self._on_save_successful)
         self.playback_controller.save_failed.connect(self._on_save_failed)
 
@@ -178,6 +189,8 @@ class MainWindow(QMainWindow):
             if note.end_time > time:
                 active_pitches.add(note.pitch)
         self.ui.piano_widget.set_active_pitches(list(active_pitches))
+        pedal_down = any(s <= time < e for s, e in self.current_pedal_intervals)
+        self.ui.piano_widget.set_pedal_active(pedal_down)
         self.ui.update_time_label(time, self.total_song_duration_sec)
 
     def _on_timeline_data_ready(self, notes, total_dur, tempo_map):
@@ -187,6 +200,10 @@ class MainWindow(QMainWindow):
         self.total_song_duration_sec = total_dur
         self.ui.timeline_widget.set_data(notes, total_dur, tempo_map)
         self.ui.reset_timeline_position()
+
+    def _on_pedal_data_ready(self, intervals: list):
+        self.current_pedal_intervals = intervals
+        self.ui.timeline_widget.set_pedal_intervals(intervals)
 
     def update_progress(self, current_time):
         self.ui.update_progress(current_time, self.total_song_duration_sec)
@@ -363,8 +380,61 @@ class MainWindow(QMainWindow):
         self.ui.set_controls_enabled(True, bool(self.loaded_save_data))
         self.ui.stop_button.setEnabled(False)
         self._sync_play_button()
+        self.ui.piano_widget.set_pedal_active(False)
+
+    # --- Update ---
+    def _manual_check_update(self):
+        btn = self.ui.settings_tab.check_update_btn
+        btn.setEnabled(False)
+        btn.setText("Checking...")
+        self._manual_checker = UpdateChecker(APP_VERSION, force=True)
+        self._manual_checker.update_available.connect(self._on_update_available)
+        self._manual_checker.update_available.connect(lambda *_: self._reset_update_btn())
+        self._manual_checker.no_update.connect(self._on_no_update)
+        self._manual_checker.check_failed.connect(self._on_check_failed)
+        self._manual_checker.start()
+
+    def _reset_update_btn(self):
+        btn = self.ui.settings_tab.check_update_btn
+        btn.setEnabled(True)
+        btn.setText("Check for updates")
+
+    def _on_no_update(self):
+        self._reset_update_btn()
+        QMessageBox.information(self, "Up to Date",
+            f"HuMidi v{APP_VERSION} is the latest version.")
+
+    def _on_check_failed(self):
+        self._reset_update_btn()
+        QMessageBox.warning(self, "Update Check Failed",
+            "Could not reach GitHub.\nPlease check your internet connection.")
+
+    def _on_update_available(self, latest_tag: str, download_url: str):
+        reply = QMessageBox.question(
+            self, "Update Available",
+            f"Update available to {latest_tag}. Would you like to update?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.Yes,
+        )
+        if reply != QMessageBox.StandardButton.Yes:
+            return
+        self._download_worker = DownloadWorker(download_url)
+        self._download_worker.finished.connect(self._on_download_finished)
+        self._download_worker.failed.connect(self._on_download_failed)
+        self._download_worker.start()
+        self.ui.log_output.append(f"Downloading update {latest_tag}...")
+
+    def _on_download_finished(self, _tmp_path: str):
+        self._save_config()
+        self.playback_controller.shutdown()
+        QApplication.quit()
+
+    def _on_download_failed(self, error: str):
+        QMessageBox.warning(self, "Update Failed",
+            f"Could not download update:\n{error}\n\nPlease update manually from GitHub.")
 
     def closeEvent(self, event):
+        self._update_checker.quit()
         self._save_config()
         self.playback_controller.shutdown()
         event.accept()

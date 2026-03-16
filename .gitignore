@@ -6,3 +6,4 @@ saves/
 *.spec
 *.pt
 *.onnx
+test_update.py

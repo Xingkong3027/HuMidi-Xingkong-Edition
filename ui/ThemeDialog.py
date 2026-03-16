@@ -11,7 +11,7 @@ from dataclasses import replace
 
 from PyQt6.QtWidgets import (
     QDialog, QHBoxLayout, QVBoxLayout, QListWidget, QListWidgetItem,
-    QLabel, QLineEdit, QPushButton, QScrollArea, QWidget, QFormLayout,
+    QLabel, QLineEdit, QPushButton, QScrollArea, QWidget,
     QDialogButtonBox, QFrame, QMessageBox, QSizePolicy
 )
 from PyQt6.QtCore import Qt, pyqtSignal as Signal
@@ -32,6 +32,7 @@ _COLOR_FIELDS = [
     ("border",        "Borders"),
     ("accent_play",   "Play Color"),
     ("accent_stop",   "Stop / Danger"),
+    ("pedal_color",   "Pedal Color"),
 ]
 
 
@@ -52,12 +53,11 @@ class _ColorSwatch(QWidget):
         layout.setSpacing(6)
 
         self._swatch = QPushButton()
-        self._swatch.setFixedSize(26, 26)
+        self._swatch.setFixedSize(24, 24)
         self._swatch.setCursor(Qt.CursorShape.PointingHandCursor)
         self._swatch.clicked.connect(self._pick_color)
 
         self._hex = QLineEdit()
-        self._hex.setFixedWidth(82)
         self._hex.setMaxLength(7)
         self._hex.setPlaceholderText("#rrggbb")
         self._hex.textEdited.connect(self._on_hex_edited)
@@ -110,14 +110,14 @@ class _ColorSwatch(QWidget):
 
     def _refresh_swatch(self) -> None:
         c = self._color
-        # Compute a contrasting border colour
         r, g, b = int(c[1:3], 16), int(c[3:5], 16), int(c[5:7], 16)
         lum = 0.299 * r + 0.587 * g + 0.114 * b
         border = "#555555" if lum > 127 else "#aaaaaa"
         self._swatch.setStyleSheet(
             f"QPushButton {{ background-color: {c}; border: 1px solid {border}; "
-            f"border-radius: 3px; }}"
-            f"QPushButton:hover {{ border: 1.5px solid {border}; }}"
+            f"border-radius: 12px; "
+            f"min-width: 24px; max-width: 24px; min-height: 24px; max-height: 24px; padding: 0; }}"
+            f"QPushButton:hover {{ border: 2px solid {border}; }}"
         )
 
 
@@ -141,7 +141,7 @@ class ThemeDialog(QDialog):
         self._pending_save = False      # True when unsaved edits exist
 
         self.setWindowTitle("Theme Manager")
-        self.setMinimumSize(680, 500)
+        self.setMinimumSize(520, 520)
         self._apply_own_stylesheet()
         self._build_ui()
         self._populate_list()
@@ -196,13 +196,13 @@ class ThemeDialog(QDialog):
         # ── Right: editor ─────────────────────────────────────────────
         right = QWidget()
         right_vbox = QVBoxLayout(right)
-        right_vbox.setContentsMargins(4, 0, 0, 0)
+        right_vbox.setContentsMargins(4, 0, 4, 0)
         right_vbox.setSpacing(8)
 
         # Name row
         name_row = QHBoxLayout()
         name_lbl = QLabel("Name")
-        name_lbl.setFixedWidth(96)
+        name_lbl.setFixedWidth(110)
         name_lbl.setProperty("role", "muted")
         self._name_edit = QLineEdit()
         self._name_edit.setPlaceholderText("Custom theme name…")
@@ -223,19 +223,25 @@ class ThemeDialog(QDialog):
         scroll.setWidgetResizable(True)
         scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         swatch_container = QWidget()
-        self._form = QFormLayout(swatch_container)
-        self._form.setSpacing(8)
-        self._form.setLabelAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+        swatch_vbox = QVBoxLayout(swatch_container)
+        swatch_vbox.setContentsMargins(4, 6, 4, 6)
+        swatch_vbox.setSpacing(10)
 
         self._swatches: dict[str, _ColorSwatch] = {}
         for key, label in _COLOR_FIELDS:
             sw = _ColorSwatch()
             sw.colorChanged.connect(lambda _hex, k=key: self._on_color_changed(k, _hex))
+            row = QHBoxLayout()
+            row.setSpacing(8)
             row_label = QLabel(label)
-            row_label.setFixedWidth(96)
-            self._form.addRow(row_label, sw)
+            row_label.setFixedWidth(110)
+            row_label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+            row.addWidget(row_label)
+            row.addWidget(sw, 1)
+            swatch_vbox.addLayout(row)
             self._swatches[key] = sw
 
+        swatch_vbox.addStretch()
         scroll.setWidget(swatch_container)
         right_vbox.addWidget(scroll)
 
