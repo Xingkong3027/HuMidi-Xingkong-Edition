@@ -80,6 +80,7 @@ class MainWindow(QMainWindow):
         self.ui.settings_tab.check_update_btn.clicked.connect(self._manual_check_update)
 
         # View manipulations bound to Window behavior
+        self.ui.collapse_btn.clicked.connect(self._sync_play_button)
         self.ui.settings_tab.always_top_check.toggled.connect(self._toggle_always_on_top)
         self.ui.settings_tab.opacity_slider.valueChanged.connect(self._change_opacity)
 
@@ -150,14 +151,26 @@ class MainWindow(QMainWindow):
         self._sync_play_button()
 
     def _sync_play_button(self):
-        """Single authoritative update for the play button label, derived from current playback state."""
+        """Single authoritative update for the play button, derived from current playback state."""
         key_str = self.hotkey_manager._format_key_string(self.hotkey_manager.current_key)
-        if self.playback_controller.is_paused():
-            self.ui.play_button.setText(f"Resume ({key_str})")
-        elif self.playback_controller.is_playing():
-            self.ui.play_button.setText(f"Pause ({key_str})")
+        if self.ui._is_collapsed:
+            if self.playback_controller.is_paused():
+                self.ui.play_button.setText("\uE768")
+                self.ui.play_button.setToolTip(f"Resume ({key_str})")
+            elif self.playback_controller.is_playing():
+                self.ui.play_button.setText("\uE769")
+                self.ui.play_button.setToolTip(f"Pause ({key_str})")
+            else:
+                self.ui.play_button.setText("\uE768")
+                self.ui.play_button.setToolTip(f"Play ({key_str})")
         else:
-            self.ui.play_button.setText(f"Play ({key_str})")
+            if self.playback_controller.is_paused():
+                self.ui.play_button.setText(f"Resume ({key_str})")
+            elif self.playback_controller.is_playing():
+                self.ui.play_button.setText(f"Pause ({key_str})")
+            else:
+                self.ui.play_button.setText(f"Play ({key_str})")
+            self.ui.play_button.setToolTip("Start, pause, or resume playback")
 
     def toggle_playback_state(self):
         if not self.playback_controller.is_paused():
@@ -234,6 +247,7 @@ class MainWindow(QMainWindow):
                 self.ui.playback_tab.humanization_group.setEnabled(False)
                 self.ui._set_save_enabled(False)
                 self.ui.play_button.setEnabled(True)
+                self.ui.scrubber_slider.setEnabled(True)
                 self.ui.log_output.append(f"Loaded save file: {self.loaded_save_filename}")
 
     def _parse_and_select_tracks(self, filepath):
@@ -250,11 +264,13 @@ class MainWindow(QMainWindow):
             self.parsed_tempo_map = tempo_map 
             self.ui.log_output.append(f"Tracks selected: {len(self.selected_tracks_info)}")
             self.ui.play_button.setEnabled(True)
+            self.ui.scrubber_slider.setEnabled(True)
             self.ui._set_save_enabled(True)
         else:
             self.ui.log_output.append("Track selection cancelled.")
             self.selected_tracks_info = None
             self.ui.play_button.setEnabled(False)
+            self.ui.scrubber_slider.setEnabled(False)
             self.ui._set_save_enabled(False)
 
     # --- Translator ---
@@ -302,6 +318,7 @@ class MainWindow(QMainWindow):
         self.ui.set_controls_enabled(False)
         self.ui.play_button.setEnabled(True)
         self.ui.stop_button.setEnabled(True)
+        self.ui.scrubber_slider.setEnabled(True)
         self._sync_play_button()
         if self.ui._nav_btns[1].isEnabled():
             self.ui.tabs.setCurrentIndex(1)  # Switch to Visualizer

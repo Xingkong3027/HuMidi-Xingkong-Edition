@@ -1,8 +1,8 @@
 from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QPushButton,
                              QCheckBox, QSlider, QLabel, QStackedWidget, QFrame,
                              QSizePolicy)
-from PyQt6.QtCore import Qt, QObject
-from PyQt6.QtGui import QColor
+from PyQt6.QtCore import Qt, QObject, QSize
+from PyQt6.QtGui import QColor, QFont, QIcon, QPainter, QPixmap
 
 from ui.widgets import NavButton
 from ui.PlaybackTab import PlaybackTab
@@ -12,6 +12,47 @@ from ui.VisualizerTab import VisualizerTab
 from ui.DebugTab import DebugTab
 from ui.LicenseTab import LicenseTab
 from ui.theme import ThemeManager, generate_stylesheet
+
+
+def _make_mdl2_icon(glyph: str, color: QColor, pixel_size: int = 14) -> QIcon:
+    """Render a Segoe MDL2 Assets glyph into a QIcon at the given pixel size."""
+    pix = QPixmap(pixel_size, pixel_size)
+    pix.fill(Qt.GlobalColor.transparent)
+    p = QPainter(pix)
+    f = QFont("Segoe MDL2 Assets")
+    f.setPixelSize(pixel_size)
+    p.setFont(f)
+    p.setPen(color)
+    p.drawText(pix.rect(), Qt.AlignmentFlag.AlignCenter, glyph)
+    p.end()
+    return QIcon(pix)
+
+
+class ElidingLabel(QLabel):
+    """QLabel that truncates text with '...' when it doesn't fit."""
+    def __init__(self, text="", parent=None):
+        super().__init__(parent)
+        self._full_text = text
+        self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
+        if text:
+            self._update_elided()
+
+    def setText(self, text):
+        self._full_text = text
+        self._update_elided()
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        self._update_elided()
+
+    def _update_elided(self):
+        width = self.contentsRect().width()
+        if width <= 0:
+            return
+        elided = self.fontMetrics().elidedText(
+            self._full_text, Qt.TextElideMode.ElideRight, width
+        )
+        super().setText(elided)
 
 
 class MainWindowUI(QObject):
@@ -34,27 +75,62 @@ class MainWindowUI(QObject):
         self._collapsed_strip = QFrame()
         self._collapsed_strip.setObjectName("collapsed_strip")
         self._collapsed_strip.setVisible(False)
-        cs_layout = QHBoxLayout(self._collapsed_strip)
+        cs_layout = QVBoxLayout(self._collapsed_strip)
         cs_layout.setContentsMargins(12, 6, 12, 6)
-        cs_layout.setSpacing(8)
+        cs_layout.setSpacing(4)
 
-        self._collapsed_file_label = QLabel("No file selected.")
+        # Row 1: filename
+        self._collapsed_file_label = ElidingLabel("No file selected.")
         self._collapsed_file_label.setObjectName("file_path_label")
+        cs_layout.addWidget(self._collapsed_file_label)
+
+        # Row 2: humanize checkbox
         self._collapsed_humanize_check = QCheckBox("Humanize")
         self._collapsed_humanize_check.setToolTip("Enable or disable all humanization at once")
-        self._collapsed_load_btn = QPushButton("Browse…")
-        self._collapsed_load_btn.setToolTip("Open a MIDI file to play")
-        self._collapsed_load_saved_btn = QPushButton("Load Save")
-        self._collapsed_load_saved_btn.setToolTip("Load a previously saved humanized performance")
-        self._collapsed_save_btn = QPushButton("Save")
-        self._collapsed_save_btn.setToolTip("Save the current humanized performance")
+        cs_layout.addWidget(self._collapsed_humanize_check)
+
+        # Row 3: load buttons (icons set in apply_theme)
+        self._collapsed_load_btn = QPushButton("")
+        self._collapsed_load_btn.setObjectName("cs_load_btn")
+        self._collapsed_load_btn.setIconSize(QSize(16, 16))
+        self._collapsed_load_btn.setToolTip("Open a MIDI file for playback")
+        self._collapsed_load_saved_btn = QPushButton("")
+        self._collapsed_load_saved_btn.setObjectName("cs_load_saved_btn")
+        self._collapsed_load_saved_btn.setIconSize(QSize(16, 16))
+        self._collapsed_load_saved_btn.setToolTip("Load a saved playback")
+
+        # Keep alive for signal wiring / _set_save_enabled — not shown in layout
+        self._collapsed_save_btn = QPushButton("\uE74E")
+        self._collapsed_save_btn.setObjectName("cs_save_btn")
+        self._collapsed_save_btn.setToolTip("Save the current playback")
         self._collapsed_save_btn.setEnabled(False)
 
-        cs_layout.addWidget(self._collapsed_file_label, 1)
-        cs_layout.addWidget(self._collapsed_humanize_check)
-        cs_layout.addWidget(self._collapsed_load_btn)
-        cs_layout.addWidget(self._collapsed_load_saved_btn)
-        cs_layout.addWidget(self._collapsed_save_btn)
+        cs_row3 = QHBoxLayout()
+        cs_row3.setSpacing(5)
+        cs_row3.addWidget(self._collapsed_load_btn, 1)
+        cs_row3.addWidget(self._collapsed_load_saved_btn, 1)
+        cs_layout.addLayout(cs_row3)
+
+        # Rows 4-6 receive reparented transport widgets on collapse
+        self._cs_scrubber_row = QWidget()
+        self._cs_scrubber_layout = QVBoxLayout(self._cs_scrubber_row)
+        self._cs_scrubber_layout.setContentsMargins(0, 0, 0, 0)
+        self._cs_scrubber_layout.setSpacing(2)
+        cs_layout.addWidget(self._cs_scrubber_row)
+
+        self._cs_playback_row = QWidget()
+        self._cs_playback_layout = QHBoxLayout(self._cs_playback_row)
+        self._cs_playback_layout.setContentsMargins(0, 0, 0, 0)
+        self._cs_playback_layout.setSpacing(5)
+        cs_layout.addWidget(self._cs_playback_row)
+
+        self._cs_expand_row = QWidget()
+        self._cs_expand_layout = QHBoxLayout(self._cs_expand_row)
+        self._cs_expand_layout.setContentsMargins(0, 0, 0, 0)
+        self._cs_expand_layout.setSpacing(0)
+        cs_layout.addWidget(self._cs_expand_row)
+
+        self._cs_layout = cs_layout
         main_layout.addWidget(self._collapsed_strip)
 
         # ── Body: sidebar + page stack ─────────────────────────────────
@@ -134,7 +210,9 @@ class MainWindowUI(QObject):
         self._scrubber_dragging = False
         transport_layout.addWidget(self.scrubber_slider)
 
-        btn_row = QHBoxLayout()
+        self._btn_row_widget = QWidget()
+        btn_row = QHBoxLayout(self._btn_row_widget)
+        btn_row.setContentsMargins(0, 0, 0, 0)
         btn_row.setSpacing(5)
 
         self.play_button = QPushButton("▶  Play")
@@ -165,19 +243,21 @@ class MainWindowUI(QObject):
         btn_row.addWidget(self.save_button)
         btn_row.addWidget(self.reset_button)
 
-        self.collapse_btn = QPushButton("▲")
+        self.collapse_btn = QPushButton("▲  Collapse")
         self.collapse_btn.setObjectName("collapse_btn")
-        self.collapse_btn.setFixedWidth(28)
         self.collapse_btn.setToolTip("Collapse to mini mode")
         self.collapse_btn.clicked.connect(self._toggle_collapsed)
         btn_row.addWidget(self.collapse_btn)
 
-        transport_layout.addLayout(btn_row)
+        transport_layout.addWidget(self._btn_row_widget)
         main_layout.addWidget(transport_bar)
+        self._transport_bar = transport_bar
+        self._transport_layout = transport_layout
 
         self.play_button.setEnabled(False)
         self.stop_button.setEnabled(False)
         self.save_button.setEnabled(False)
+        self.scrubber_slider.setEnabled(False)
 
         # ── Cross-cutting connections ──────────────────────────────────
         self.settings_tab.timeline_vis_check.toggled.connect(self._on_timeline_toggle)
@@ -211,6 +291,12 @@ class MainWindowUI(QObject):
             return
         ThemeManager.set_active_name(name)
         self.main_window.setStyleSheet(generate_stylesheet(theme))
+        _c = QColor(theme.text_primary)
+        _px = self._collapsed_load_btn.fontMetrics().height()
+        self._collapsed_load_btn.setIconSize(QSize(_px, _px))
+        self._collapsed_load_btn.setIcon(_make_mdl2_icon("\uE8D6", _c, _px))
+        self._collapsed_load_saved_btn.setIconSize(QSize(_px, _px))
+        self._collapsed_load_saved_btn.setIcon(_make_mdl2_icon("\uEC50", _c, _px))
         self.timeline_widget.left_hand_color.setNamedColor(theme.accent)
         self.timeline_widget.left_hand_color.setAlpha(210)
         self.timeline_widget.right_hand_color.setNamedColor(theme.accent_play)
@@ -306,15 +392,67 @@ class MainWindowUI(QObject):
             self._expanded_size = self.main_window.size()
             self._body.setVisible(False)
             self._collapsed_strip.setVisible(True)
-            self.collapse_btn.setText("▼")
+            self.collapse_btn.setText("▼  Expand")
             self.collapse_btn.setToolTip("Restore full window")
+            self.collapse_btn.setMinimumWidth(0)
+            self.collapse_btn.setMaximumWidth(16777215)
+            self.collapse_btn.setProperty("strip_mode", True)
+            self.collapse_btn.style().unpolish(self.collapse_btn)
+            self.collapse_btn.style().polish(self.collapse_btn)
+            # Row 4: scrubber then time label stacked vertically
+            self._cs_scrubber_layout.addWidget(self.scrubber_slider)
+            self._cs_scrubber_layout.addWidget(self.time_label)
+            # Row 5: play + stop equal width
+            self._cs_playback_layout.addWidget(self.play_button, 1)
+            self._cs_playback_layout.addWidget(self.stop_button, 1)
+            # Row 6: expand button full width
+            self._cs_expand_layout.addWidget(self.collapse_btn)
+            for btn, glyph in [
+                (self.play_button, "\uE768"),
+                (self.stop_button, "\uE71A"),
+            ]:
+                btn.setMinimumWidth(0)
+                btn.setMaximumWidth(16777215)
+                btn.setText(glyph)
+                btn.setProperty("icon_mode", True)
+                btn.style().unpolish(btn)
+                btn.style().polish(btn)
+            self.save_button.setVisible(False)
+            self.reset_button.setVisible(False)
+            self._transport_bar.setVisible(False)
+            self.main_window.setMinimumWidth(0)
             self.main_window.setMinimumHeight(0)
             self.main_window.adjustSize()
+            self.main_window.resize(250, 250)
         else:
             self._body.setVisible(True)
             self._collapsed_strip.setVisible(False)
-            self.collapse_btn.setText("▲")
+            self.collapse_btn.setText("▲  Collapse")
             self.collapse_btn.setToolTip("Collapse to mini mode")
+            self.collapse_btn.setProperty("strip_mode", False)
+            self.collapse_btn.style().unpolish(self.collapse_btn)
+            self.collapse_btn.style().polish(self.collapse_btn)
+            # Restore all reparented widgets back into the transport bar
+            self._transport_layout.insertWidget(0, self.scrubber_slider)
+            btn_row_layout = self._btn_row_widget.layout()
+            btn_row_layout.insertWidget(0, self.play_button)
+            btn_row_layout.insertWidget(1, self.stop_button)
+            btn_row_layout.insertWidget(3, self.time_label)
+            btn_row_layout.addWidget(self.collapse_btn)
+            for btn in (self.play_button, self.stop_button):
+                btn.setMinimumWidth(0)
+                btn.setMaximumWidth(16777215)
+                btn.setProperty("icon_mode", False)
+                btn.style().unpolish(btn)
+                btn.style().polish(btn)
+            self.stop_button.setText("■  Stop")
+            self.save_button.setVisible(True)
+            self.save_button.setText("Save")
+            self.reset_button.setVisible(True)
+            self.reset_button.setText("Reset")
+            self._transport_bar.setVisible(True)
+            # play_button text restored by _sync_play_button (connected to collapse_btn.clicked)
+            self.main_window.setMinimumWidth(820)
             self.main_window.setMinimumHeight(485)
             self.main_window.resize(self._expanded_size)
 

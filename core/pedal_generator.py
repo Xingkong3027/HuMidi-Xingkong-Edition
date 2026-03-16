@@ -32,7 +32,8 @@ def generate_events(config: dict, final_notes: List[Note], sections: List[Musica
     events = []
 
     if style == 'hybrid':
-        if config.get('use_ai_pedal', True):
+        # TODO: re-enable when Pedal AI is integrated
+        if False and config.get('use_ai_pedal', True):
             ai_events = _generate_ai_pedal(final_notes, debug_log)
             if ai_events:
                 return ai_events

@@ -628,17 +628,41 @@ QFrame#collapsed_strip {
     border-bottom: 1px solid %(border)s;
 }
 
+/* ── Collapsed strip icon buttons ───────────────────────────── */
+QPushButton#cs_save_btn {
+    font-family: "Segoe MDL2 Assets";
+    font-size: 12pt;
+}
+
+/* ── Transport buttons in icon mode (collapsed view) ─────────── */
+QPushButton#play_button[icon_mode="true"],
+QPushButton#stop_button[icon_mode="true"] {
+    font-family: "Segoe MDL2 Assets";
+    font-size: 14pt;
+    min-width: 0;
+}
+QPushButton#save_button[icon_mode="true"],
+QPushButton#reset_button[icon_mode="true"] {
+    font-family: "Segoe MDL2 Assets";
+    font-size: 14pt;
+    min-width: 60px;
+    max-width: 60px;
+}
+
 /* ── Collapse toggle button ──────────────────────────────────── */
 QPushButton#collapse_btn {
     background: transparent;
     border: 1px solid %(border)s;
     border-radius: 4px;
     color: %(text_secondary)s;
-    font-size: 7pt;
-    padding: 1px 4px;
 }
 QPushButton#collapse_btn:hover {
     background-color: %(nav_hover_bg)s;
+    color: %(text_primary)s;
+}
+QPushButton#collapse_btn[strip_mode="true"] {
+    font-size: 9pt;
+    padding: 5px 16px;
     color: %(text_primary)s;
 }
 """
