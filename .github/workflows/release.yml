@@ -156,7 +156,7 @@ jobs:
           --onefile
           --windowed
           --name HuMidi
-          --icon icon.ico
+          --icon icon.icns
           --add-data "icon.ico:."
           main.py
 
@@ -168,7 +168,7 @@ jobs:
           pyinstaller
           --windowed
           --name HuMidi
-          --icon icon.ico
+          --icon icon.icns
           --add-data "icon.ico:."
           main.py
 
