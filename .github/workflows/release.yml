@@ -12,10 +12,6 @@ on:
         type: string
 
 jobs:
-
-  # ──────────────────────────────────────────────────────────────────────────
-  # JOB 1: Verify the git tag matches APP_VERSION in source code
-  # ──────────────────────────────────────────────────────────────────────────
   check-version:
     name: Verify version matches tag
     runs-on: ubuntu-latest
@@ -104,10 +100,6 @@ jobs:
 
           print("Version order OK ✓")
           EOF
-
-  # ──────────────────────────────────────────────────────────────────────────
-  # JOB 2: Build Windows .exe
-  # ──────────────────────────────────────────────────────────────────────────
   build-windows:
     name: Build Windows executable
     runs-on: windows-latest
@@ -141,10 +133,7 @@ jobs:
           name: windows-exe
           path: dist/HuMidi.exe
           if-no-files-found: error
-
-  # ──────────────────────────────────────────────────────────────────────────
-  # JOB 3: Build macOS tar.gz (auto-updater) + DMG (first-time install)
-  # ──────────────────────────────────────────────────────────────────────────
+          
   build-macos:
     name: Build macOS binaries (tar.gz + DMG)
     runs-on: macos-latest
@@ -160,30 +149,26 @@ jobs:
           python-version: "3.11"
 
       - name: Install dependencies
-        run: pip install -r requirements.txt
-
-      # Pass 1: single-file binary → HuMidi.tar.gz (used by the in-app auto-updater)
+        run: pip install -r requirements.txt pillow
       - name: Build onefile binary (for tar.gz)
         run: >
           pyinstaller
           --onefile
           --windowed
           --name HuMidi
-          --icon icon.ico
+          --icon icon.icns
           --add-data "icon.ico:."
           main.py
 
       - name: Package as HuMidi.tar.gz
         working-directory: dist
         run: tar -czf HuMidi.tar.gz HuMidi
-
-      # Pass 2: .app bundle → HuMidi.dmg (for first-time installation)
       - name: Build .app bundle (for DMG)
         run: >
           pyinstaller
           --windowed
           --name HuMidi
-          --icon icon.ico
+          --icon icon.icns
           --add-data "icon.ico:."
           main.py
 
@@ -211,9 +196,6 @@ jobs:
           path: dist/HuMidi.dmg
           if-no-files-found: error
 
-  # ──────────────────────────────────────────────────────────────────────────
-  # JOB 4: Create GitHub Release and upload all artifacts
-  # ──────────────────────────────────────────────────────────────────────────
   release:
     name: Create GitHub Release
     runs-on: ubuntu-latest
