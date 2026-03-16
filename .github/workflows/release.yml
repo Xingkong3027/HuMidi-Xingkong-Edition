@@ -133,7 +133,6 @@ jobs:
           --name HuMidi
           --icon icon.ico
           --add-data "icon.ico;."
-          --add-data "pedal_bilstm.onnx;."
           main.py
 
       - name: Upload Windows artifact
@@ -172,7 +171,6 @@ jobs:
           --name HuMidi
           --icon icon.ico
           --add-data "icon.ico:."
-          --add-data "pedal_bilstm.onnx:."
           main.py
 
       - name: Package as HuMidi.tar.gz
@@ -187,7 +185,6 @@ jobs:
           --name HuMidi
           --icon icon.ico
           --add-data "icon.ico:."
-          --add-data "pedal_bilstm.onnx:."
           main.py
 
       - name: Create DMG from .app bundle

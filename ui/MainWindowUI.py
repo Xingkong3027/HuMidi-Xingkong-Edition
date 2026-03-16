@@ -350,7 +350,7 @@ class MainWindowUI(QObject):
 
     def reset_controls_to_default(self) -> None:
         self.playback_tab.reset_to_default()
-        self.settings_tab.use_ai_pedal_check.setChecked(True)
+        self.settings_tab.use_ai_pedal_check.setChecked(False)
 
     def load_config_to_ui(self, config: dict, save_dir: str) -> None:
         self.playback_tab.load_config(config)

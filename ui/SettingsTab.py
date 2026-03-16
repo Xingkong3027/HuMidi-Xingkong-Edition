@@ -93,13 +93,13 @@ class SettingsTab(QWidget):
         # AI Model card
         ai_card, ai_content = make_card("AI Model")
         self.use_ai_pedal_check = QCheckBox("Enable AI Pedal")
-        self.use_ai_pedal_check.setChecked(True)
-        self.use_ai_pedal_check.setToolTip(
-            "Use the ONNX BiLSTM model for pedal timing when 'Auto (Default)' is selected.\n"
-            "Falls back to the algorithmic driver if the model file is missing.\n"
-            "Disable to always use the algorithmic driver."
-        )
+        self.use_ai_pedal_check.setChecked(False)
+        self.use_ai_pedal_check.setEnabled(False)
+        self.use_ai_pedal_check.setToolTip("Sorry, still in development!")
+        ai_wip_label = QLabel("Sorry, still in development!")
+        ai_wip_label.setEnabled(False)
         ai_content.addWidget(self.use_ai_pedal_check)
+        ai_content.addWidget(ai_wip_label)
         right_col.addWidget(ai_card)
 
         # Theme card
@@ -140,7 +140,7 @@ class SettingsTab(QWidget):
         self.theme_combo.blockSignals(False)
 
     def load_config(self, config: dict, save_dir: str) -> None:
-        self.use_ai_pedal_check.setChecked(config.get('use_ai_pedal', True))
+        self.use_ai_pedal_check.setChecked(config.get('use_ai_pedal', False))
         self.always_top_check.setChecked(config.get('always_on_top', False))
         self.opacity_slider.setValue(config.get('opacity', 100))
         self.timeline_vis_check.setChecked(config.get('show_timeline_visualizer', True))
