@@ -166,6 +166,7 @@ jobs:
       - name: Build .app bundle (for DMG)
         run: >
           pyinstaller
+          -y
           --windowed
           --name HuMidi
           --icon icon.icns
