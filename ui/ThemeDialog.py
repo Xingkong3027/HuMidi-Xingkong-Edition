@@ -12,10 +12,10 @@ from dataclasses import replace
 from PyQt6.QtWidgets import (
     QDialog, QHBoxLayout, QVBoxLayout, QListWidget, QListWidgetItem,
     QLabel, QLineEdit, QPushButton, QScrollArea, QWidget,
-    QDialogButtonBox, QFrame, QMessageBox, QSizePolicy
+    QDialogButtonBox, QFrame, QMessageBox
 )
 from PyQt6.QtCore import Qt, pyqtSignal as Signal
-from PyQt6.QtGui import QColor, QFont
+from PyQt6.QtGui import QColor
 
 from ui.theme import ThemeColors, ThemeManager, generate_stylesheet, BUILTIN_THEMES
 

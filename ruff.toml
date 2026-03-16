@@ -1,0 +1,4 @@
+exclude = ["backup/"]
+
+[lint]
+ignore = ["E701", "E702"]

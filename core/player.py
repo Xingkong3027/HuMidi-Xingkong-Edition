@@ -1,5 +1,4 @@
 from PyQt6.QtCore import QObject, pyqtSignal as Signal
-from pynput import keyboard
 from pynput.keyboard import Key, Controller
 import time
 import threading
@@ -173,7 +172,8 @@ class Player(QObject):
         if self.pause_event.is_set():
             try:
                 self.keyboard.release(Key.space)
-            except: pass
+            except Exception:
+                pass
 
             pause_duration = time.perf_counter() - self.last_pause_timestamp
             self.total_paused_time += pause_duration
@@ -255,13 +255,9 @@ class Player(QObject):
                 else:
                     notes_unmapped += 1
 
-        note_events_count = len(temp_heap)
-
         self._log_debug(f"[COMPILE] Pedal style: {self.config.get('pedal_style', 'none')}")
         for event in pedal_generator.generate_events(self.config, notes_to_play, sections, self._log_debug):
             heapq.heappush(temp_heap, event)
-        pedal_events_count = len(temp_heap) - note_events_count
-
         self.compiled_events = []
         while temp_heap:
             self.compiled_events.append(heapq.heappop(temp_heap))

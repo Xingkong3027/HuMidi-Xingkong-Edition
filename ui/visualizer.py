@@ -1,7 +1,7 @@
 from PyQt6.QtWidgets import QWidget, QSizePolicy
 from PyQt6.QtCore import Qt, QRectF, QPointF, pyqtSignal as Signal
 from PyQt6.QtGui import QPainter, QBrush, QColor, QPen, QPixmap
-from typing import List, Set
+from typing import List
 from core.models import Note
 from core.core import TempoMap
 

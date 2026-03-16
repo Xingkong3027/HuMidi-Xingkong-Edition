@@ -2,7 +2,7 @@ import copy
 import json
 from datetime import datetime
 from pathlib import Path
-from typing import Dict, List, Any
+from typing import Dict, List
 
 from PyQt6.QtCore import QObject, QThread, pyqtSignal as Signal
 

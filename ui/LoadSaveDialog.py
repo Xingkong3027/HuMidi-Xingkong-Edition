@@ -6,7 +6,6 @@ from PyQt6.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QSplitter,
                              QScrollArea, QPushButton,
                              QLabel, QFrame, QGridLayout, QMessageBox, QInputDialog)
 from PyQt6.QtCore import Qt
-from PyQt6.QtGui import QFont
 
 from ui.theme import ThemeManager, generate_stylesheet
 

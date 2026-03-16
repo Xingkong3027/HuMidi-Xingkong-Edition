@@ -1,5 +1,5 @@
 import math
-from typing import List, Dict, Optional, Tuple
+from typing import List, Dict, Tuple
 
 from pynput.keyboard import Key
 
