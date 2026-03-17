@@ -120,15 +120,16 @@ jobs:
       - name: Build HuMidi
         run: >
           pyinstaller
+          --onefile
           --noconsole
           --name HuMidi
           --icon icon.ico
           --add-data "icon.ico;."
-          --collect-all onnxruntime
+          --add-data "pedal_bilstm.npz;."
           main.py
 
       - name: Package as HuMidi-windows.zip
-        run: Compress-Archive -Path dist\HuMidi\* -DestinationPath dist\HuMidi-windows.zip
+        run: Compress-Archive -Path dist\HuMidi.exe -DestinationPath dist\HuMidi-windows.zip
 
       - name: Upload Windows artifact
         uses: actions/upload-artifact@v4
@@ -161,7 +162,7 @@ jobs:
           --name HuMidi
           --icon icon.icns
           --add-data "icon.ico:."
-          --collect-all onnxruntime
+          --add-data "pedal_bilstm.npz:."
           main.py
 
       - name: Package as HuMidi.tar.gz
@@ -171,11 +172,12 @@ jobs:
         run: >
           pyinstaller
           -y
+          --onefile
           --windowed
           --name HuMidi
           --icon icon.icns
           --add-data "icon.ico:."
-          --collect-all onnxruntime
+          --add-data "pedal_bilstm.npz:."
           main.py
 
       - name: Create DMG from .app bundle

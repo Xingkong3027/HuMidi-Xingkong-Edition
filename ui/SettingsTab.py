@@ -90,18 +90,6 @@ class SettingsTab(QWidget):
         vis_content.addWidget(self.piano_vis_check)
         right_col.addWidget(vis_card)
 
-        # AI Model card
-        ai_card, ai_content = make_card("AI Model")
-        self.use_ai_pedal_check = QCheckBox("Enable AI Pedal")
-        self.use_ai_pedal_check.setChecked(False)
-        self.use_ai_pedal_check.setEnabled(False)
-        self.use_ai_pedal_check.setToolTip("Sorry, still in development!")
-        ai_wip_label = QLabel("Sorry, still in development!")
-        ai_wip_label.setEnabled(False)
-        ai_content.addWidget(self.use_ai_pedal_check)
-        ai_content.addWidget(ai_wip_label)
-        right_col.addWidget(ai_card)
-
         # Theme card
         theme_card, theme_content = make_card("Theme")
         theme_row = QHBoxLayout()
@@ -140,7 +128,6 @@ class SettingsTab(QWidget):
         self.theme_combo.blockSignals(False)
 
     def load_config(self, config: dict, save_dir: str) -> None:
-        self.use_ai_pedal_check.setChecked(config.get('use_ai_pedal', False))
         self.always_top_check.setChecked(config.get('always_on_top', False))
         self.opacity_slider.setValue(config.get('opacity', 100))
         self.timeline_vis_check.setChecked(config.get('show_timeline_visualizer', True))
@@ -149,7 +136,6 @@ class SettingsTab(QWidget):
 
     def gather_config(self) -> dict:
         return {
-            'use_ai_pedal':              self.use_ai_pedal_check.isChecked(),
             'always_on_top':             self.always_top_check.isChecked(),
             'opacity':                   self.opacity_slider.value(),
             'show_timeline_visualizer':  self.timeline_vis_check.isChecked(),

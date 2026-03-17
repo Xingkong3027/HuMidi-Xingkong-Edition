@@ -10,6 +10,7 @@ class PlaybackTab(QWidget):
 
     PEDAL_MAPPING = {
         "Auto (Default)": "hybrid",
+        "PedalAI":        "ai",
         "Harmonic":        "legato",
         "Rhythmic":        "rhythmic",
         "None":            "none",
@@ -84,7 +85,8 @@ class PlaybackTab(QWidget):
         self.pedal_style_combo = QComboBox()
         self.pedal_style_combo.addItems(list(self.PEDAL_MAPPING.keys()))
         self.pedal_style_combo.setToolTip(
-            "Auto (Default): AI-driven pedal using a hybrid of rhythmic and harmonic analysis\n"
+            "Auto (Default): Adaptive hybrid of rhythmic and harmonic analysis\n"
+            "AI Pedal: BiLSTM model-generated pedal with adaptive fallback\n"
             "Harmonic: Hold pedal through harmonic regions, releasing at chord/bass changes\n"
             "Rhythmic: Release pedal on beat boundaries only\n"
             "None: No sustain pedal"

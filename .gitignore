@@ -6,4 +6,6 @@ saves/
 *.spec
 *.pt
 *.onnx
+*.npz
 test_update.py
+convert_model.py

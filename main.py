@@ -90,7 +90,6 @@ class MainWindow(QMainWindow):
         self.ui.settings_tab.opacity_slider.valueChanged.connect(self._save_config)
         self.ui.settings_tab.timeline_vis_check.toggled.connect(self._save_config)
         self.ui.settings_tab.piano_vis_check.toggled.connect(self._save_config)
-        self.ui.settings_tab.use_ai_pedal_check.toggled.connect(self._save_config)
 
         # Translator tab
         self.ui.translator_tab.play_sheet_requested.connect(self._on_play_sheet)

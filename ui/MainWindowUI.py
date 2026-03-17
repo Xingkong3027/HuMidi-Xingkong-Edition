@@ -488,7 +488,6 @@ class MainWindowUI(QObject):
 
     def reset_controls_to_default(self) -> None:
         self.playback_tab.reset_to_default()
-        self.settings_tab.use_ai_pedal_check.setChecked(False)
 
     def load_config_to_ui(self, config: dict, save_dir: str) -> None:
         self.playback_tab.load_config(config)
@@ -496,7 +495,7 @@ class MainWindowUI(QObject):
 
     def gather_playback_config(self) -> dict:
         cfg = self.playback_tab.gather_playback_config()
-        cfg['use_ai_pedal'] = self.settings_tab.use_ai_pedal_check.isChecked()
+        cfg['use_ai_pedal'] = False  # AI pedal is driven by pedal_style='ai', not this flag
         return cfg
 
     def gather_app_config(self) -> dict:
