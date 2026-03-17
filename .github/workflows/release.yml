@@ -125,6 +125,7 @@ jobs:
           --name HuMidi
           --icon icon.ico
           --add-data "icon.ico;."
+          --collect-all onnxruntime
           main.py
 
       - name: Upload Windows artifact
@@ -158,6 +159,7 @@ jobs:
           --name HuMidi
           --icon icon.icns
           --add-data "icon.ico:."
+          --collect-all onnxruntime
           main.py
 
       - name: Package as HuMidi.tar.gz
@@ -171,6 +173,7 @@ jobs:
           --name HuMidi
           --icon icon.icns
           --add-data "icon.ico:."
+          --collect-all onnxruntime
           main.py
 
       - name: Create DMG from .app bundle
