@@ -1,6 +1,9 @@
 #!/usr/bin/env python3
 import sys
 import os
+
+if getattr(sys, 'frozen', False) and hasattr(sys, '_MEIPASS'):
+    os.add_dll_directory(sys._MEIPASS)
 import bisect
 from PyQt6.QtWidgets import QApplication, QMainWindow, QMessageBox, QFileDialog, QDialog
 from PyQt6.QtCore import Qt
