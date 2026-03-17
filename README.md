@@ -20,7 +20,7 @@ HuMidi includes various humanization options for a natural, human-like playback.
   just run the `.exe` or `.dmg`! 
 
 ### Or, if you don't trust me...
-You can create your own `.exe` or `.dmg` with pyinstaller. I've provided the icon `icon.ico` (or `.icon.icns` for MacOS), so use with this command:
+You can create your own `.exe` or `.dmg` with pyinstaller. I've provided the icon `icon.ico` (or `icon.icns` for MacOS), so use with this command:
 
 For Windows:
     
