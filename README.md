@@ -1,29 +1,36 @@
 # HuMidi
-##### (formerly Midi2Key. Way too many Midi2Keys out there..)
 
-### You can download this from the releases or from Sourceforge: [![Download HuMidi](https://img.shields.io/sourceforge/dw/humidi-roblox-piano-autoplayer.svg)](https://sourceforge.net/projects/humidi-roblox-piano-autoplayer/files/latest/download)
+### You can download this from the releases or from Sourceforge
+
+[![Download HuMidi](https://img.shields.io/sourceforge/dw/humidi-roblox-piano-autoplayer.svg)](https://sourceforge.net/projects/humidi-roblox-piano-autoplayer/files/latest/download)
 
 
 ## About HuMidi
 HuMidi includes various humanization options for a natural, human-like playback. Including automatic pedal timing and 88-key keyboard support. Easy to run via executable or source code, with GUI support included.
 
 
-<img width="326" height="396" alt="Midi2Key / HuMidi v1.3 Playback tab" src="https://github.com/user-attachments/assets/c9d39ad9-0517-4ea6-acb3-da312868aaed" />
-<img width="326" height="396" alt="Midi2Key / HuMidi v1.3 Visualizer tab" src="https://github.com/user-attachments/assets/dfe54071-70ba-4c80-b2a8-3c866f3f7cb1" />
-<img width="326" height="396" alt="Midi2Key / HuMidi v1.3 Settings tab" src="https://github.com/user-attachments/assets/17b5eac5-b194-4d77-af0e-f1d1c17e463a" />
+<img width="326" height="396" alt="HuMidi v2.0 Expanded view with all Humanization and related options in playback" src="https://github.com/user-attachments/assets/e253ae9e-9280-4cb9-97bb-4ad6ac302237" />
+<img width="326" height="396" alt="A minimized, compact view of HuMidi v2.0. Only necessary buttons are shown." src="https://github.com/user-attachments/assets/11065766-a107-461a-a46f-84f8119098cf" />
+<img width="180" height="326" alt="HuMidi v2.0 with a new Light mode theme, showing a settings page with option to change color theme." src="https://github.com/user-attachments/assets/344cf20a-ffe2-482c-bc71-53c4c378a5ad" />
 
 
 
 # How do you run it?
-### If you downloaded the .exe from the releases:
-  just run the .exe! 
+### If you downloaded the file from the releases:
+  just run the `.exe` or `.dmg`! 
 
 ### Or, if you don't trust me...
-You can create your own `.exe` with pyinstaller. I've provided the icon `icon.ico`, so use with this command:
-    
-    pyinstaller --noconsole --onefile --icon=icon.ico --add-data "icon.ico;." main.py
+You can create your own `.exe` or `.dmg` with pyinstaller. I've provided the icon `icon.ico` (or `.icon.icns` for MacOS), so use with this command:
 
-  make sure the .ico file and .py file is in the same directory.
+For Windows:
+    
+    pyinstaller --onefile --noconsole --name HuMidi --icon icon.ico --add-data "icon.ico;." main.py
+
+For Mac:
+
+    pyinstaller --onefile --windowed --name HuMidi --icon icon.icns --add-data "icon.ico:." main.py
+
+  make sure the `.ico` or `.icns` file and .py file is in the same directory.
 
 ### ...if you choose to do neither above:
 You need to run this in a command prompt. After you navigate to where the .py files are. type for example:
