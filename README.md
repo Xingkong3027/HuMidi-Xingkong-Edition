@@ -30,22 +30,22 @@ For Mac:
 
     pyinstaller --onefile --windowed --name HuMidi --icon icon.icns --add-data "icon.ico:." main.py
 
-  make sure the `.ico` or `.icns` file and .py file is in the same directory.
+  make sure the `.ico` or `.icns` file and `.py` file is in the same directory.
 
 ### ...if you choose to do neither above:
-You need to run this in a command prompt. After you navigate to where the .py files are. type for example:
+You need to run this in a command prompt. After you navigate to where the `.py` files are. type for example:
 
     python main.py
     
-  else if you are not going to use the main.py with GUI, for whatever reason, navigate to the backup folder, open command prompt there, then enter:
+  else if you are not going to use the `main.py` with GUI, for whatever reason, navigate to the backup folder, open command prompt there, then enter:
 
     python final_beforeGUI.py --help
 
-  (of course, you may replace final_beforeGUI.py with noDuration.py, or any in the backup if desired)
+  (of course, you may replace `final_beforeGUI.py` with `noDuration.py`, or any in the backup if desired)
 
 this will show you all the available flags and formatting. Though I can't guarantee the same quality from the GUI versions, because the noGUI version hasn't been updated at all.
 
-Remember that it accepts .mid files only. it works best with piano-only .mid, but I've seen it work with mixed instruments.
+Remember that it accepts `.mid` files only. it works best with piano-only `.mid`, but I've seen it work with mixed instruments.
 
 # Dependencies
 If you chose to not trust me (not judging) and did not want to use the `exe` in the releases, you might need to install a few python libraries. You will see that `main.py` and other `.py` files import various libraries. You can't run this application without downloading all of them. Some (not all) are:
