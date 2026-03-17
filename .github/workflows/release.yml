@@ -135,7 +135,7 @@ jobs:
           if-no-files-found: error
           
   build-macos:
-    name: Build macOS binaries (tar.gz + DMG)
+    name: Build macOS DMG
     runs-on: macos-latest
     needs: check-version
 
@@ -150,23 +150,10 @@ jobs:
 
       - name: Install dependencies
         run: pip install -r requirements.txt pillow
-      - name: Build onefile binary (for tar.gz)
-        run: >
-          pyinstaller
-          --onefile
-          --windowed
-          --name HuMidi
-          --icon icon.icns
-          --add-data "icon.ico:."
-          main.py
 
-      - name: Package as HuMidi.tar.gz
-        working-directory: dist
-        run: tar -czf HuMidi.tar.gz HuMidi
-      - name: Build .app bundle (for DMG)
+      - name: Build .app bundle
         run: >
           pyinstaller
-          -y
           --onefile
           --windowed
           --name HuMidi
@@ -184,13 +171,6 @@ jobs:
           -format UDZO
           HuMidi.dmg
 
-      - name: Upload macOS tar.gz artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: macos-tar
-          path: dist/HuMidi.tar.gz
-          if-no-files-found: error
-
       - name: Upload macOS DMG artifact
         uses: actions/upload-artifact@v4
         with:
@@ -198,10 +178,52 @@ jobs:
           path: dist/HuMidi.dmg
           if-no-files-found: error
 
+  build-linux:
+    name: Build Linux binary
+    runs-on: ubuntu-latest
+    needs: check-version
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libgl1 libegl1 libxkbcommon0 libdbus-1-3
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Build HuMidi
+        run: >
+          pyinstaller
+          --onefile
+          --windowed
+          --name HuMidi
+          --add-data "icon.ico:."
+          main.py
+
+      - name: Package as HuMidi.tar.gz
+        working-directory: dist
+        run: tar -czf HuMidi.tar.gz HuMidi
+
+      - name: Upload Linux artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-tar
+          path: dist/HuMidi.tar.gz
+          if-no-files-found: error
+
   release:
     name: Create GitHub Release
     runs-on: ubuntu-latest
-    needs: [build-windows, build-macos]
+    needs: [build-windows, build-macos, build-linux]
     permissions:
       contents: write
 
@@ -229,5 +251,5 @@ jobs:
           prerelease: false
           files: |
             artifacts/windows-exe/HuMidi.exe
-            artifacts/macos-tar/HuMidi.tar.gz
             artifacts/macos-dmg/HuMidi.dmg
+            artifacts/linux-tar/HuMidi.tar.gz
