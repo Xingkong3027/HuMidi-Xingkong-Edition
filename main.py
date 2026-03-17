@@ -1,9 +1,6 @@
 #!/usr/bin/env python3
 import sys
 import os
-
-if getattr(sys, 'frozen', False) and hasattr(sys, '_MEIPASS'):
-    os.add_dll_directory(sys._MEIPASS)
 import bisect
 from PyQt6.QtWidgets import QApplication, QMainWindow, QMessageBox, QFileDialog, QDialog
 from PyQt6.QtCore import Qt
@@ -12,7 +9,8 @@ from PyQt6.QtGui import QIcon
 from core.core import MidiParser, KeyMapper, TempoMap
 from core.translator import FormatRegistry
 from managers.HotkeyManager import HotkeyManager
-from managers.UpdateManager import UpdateChecker, DownloadWorker
+import webbrowser
+from managers.UpdateManager import UpdateChecker
 from controllers.PlaybackController import PlaybackController
 from managers.ConfigManager import ConfigManager
 from ui.MainWindowUI import MainWindowUI
@@ -429,29 +427,15 @@ class MainWindow(QMainWindow):
         QMessageBox.warning(self, "Update Check Failed",
             "Could not reach GitHub.\nPlease check your internet connection.")
 
-    def _on_update_available(self, latest_tag: str, download_url: str):
+    def _on_update_available(self, latest_tag: str, releases_url: str):
         reply = QMessageBox.question(
             self, "Update Available",
-            f"Update available to {latest_tag}. Would you like to update?",
+            f"Update available to {latest_tag}. Would you like to open the download page?",
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
             QMessageBox.StandardButton.Yes,
         )
-        if reply != QMessageBox.StandardButton.Yes:
-            return
-        self._download_worker = DownloadWorker(download_url)
-        self._download_worker.finished.connect(self._on_download_finished)
-        self._download_worker.failed.connect(self._on_download_failed)
-        self._download_worker.start()
-        self.ui.log_output.append(f"Downloading update {latest_tag}...")
-
-    def _on_download_finished(self, _tmp_path: str):
-        self._save_config()
-        self.playback_controller.shutdown()
-        QApplication.quit()
-
-    def _on_download_failed(self, error: str):
-        QMessageBox.warning(self, "Update Failed",
-            f"Could not download update:\n{error}\n\nPlease update manually from GitHub.")
+        if reply == QMessageBox.StandardButton.Yes:
+            webbrowser.open(releases_url)
 
     def closeEvent(self, event):
         self._update_checker.quit()

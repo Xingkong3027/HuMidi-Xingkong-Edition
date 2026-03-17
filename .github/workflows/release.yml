@@ -117,10 +117,9 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt
 
-      - name: Build HuMidi.exe
+      - name: Build HuMidi
         run: >
           pyinstaller
-          --onefile
           --noconsole
           --name HuMidi
           --icon icon.ico
@@ -128,11 +127,14 @@ jobs:
           --collect-all onnxruntime
           main.py
 
+      - name: Package as HuMidi-windows.zip
+        run: Compress-Archive -Path dist\HuMidi\* -DestinationPath dist\HuMidi-windows.zip
+
       - name: Upload Windows artifact
         uses: actions/upload-artifact@v4
         with:
-          name: windows-exe
-          path: dist/HuMidi.exe
+          name: windows-zip
+          path: dist/HuMidi-windows.zip
           if-no-files-found: error
           
   build-macos:
@@ -230,6 +232,6 @@ jobs:
           draft: false
           prerelease: false
           files: |
-            artifacts/windows-exe/HuMidi.exe
+            artifacts/windows-zip/HuMidi-windows.zip
             artifacts/macos-tar/HuMidi.tar.gz
             artifacts/macos-dmg/HuMidi.dmg
