@@ -125,7 +125,6 @@ jobs:
           --name HuMidi
           --icon icon.ico
           --add-data "icon.ico;."
-          --add-data "pedal_bilstm.npz;."
           main.py
 
       - name: Package as HuMidi-windows.zip
@@ -162,7 +161,6 @@ jobs:
           --name HuMidi
           --icon icon.icns
           --add-data "icon.ico:."
-          --add-data "pedal_bilstm.npz:."
           main.py
 
       - name: Package as HuMidi.tar.gz
@@ -177,7 +175,6 @@ jobs:
           --name HuMidi
           --icon icon.icns
           --add-data "icon.ico:."
-          --add-data "pedal_bilstm.npz:."
           main.py
 
       - name: Create DMG from .app bundle
