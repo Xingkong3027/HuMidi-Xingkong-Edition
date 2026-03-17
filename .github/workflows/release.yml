@@ -127,14 +127,11 @@ jobs:
           --add-data "icon.ico;."
           main.py
 
-      - name: Package as HuMidi-windows.zip
-        run: Compress-Archive -Path dist\HuMidi.exe -DestinationPath dist\HuMidi-windows.zip
-
       - name: Upload Windows artifact
         uses: actions/upload-artifact@v4
         with:
-          name: windows-zip
-          path: dist/HuMidi-windows.zip
+          name: windows-exe
+          path: dist/HuMidi.exe
           if-no-files-found: error
           
   build-macos:
@@ -231,6 +228,6 @@ jobs:
           draft: false
           prerelease: false
           files: |
-            artifacts/windows-zip/HuMidi-windows.zip
+            artifacts/windows-exe/HuMidi.exe
             artifacts/macos-tar/HuMidi.tar.gz
             artifacts/macos-dmg/HuMidi.dmg
