@@ -154,7 +154,6 @@ jobs:
       - name: Build .app bundle
         run: >
           pyinstaller
-          --onefile
           --windowed
           --name HuMidi
           --icon icon.icns
