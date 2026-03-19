@@ -1,8 +1,12 @@
 # HuMidi
 
+[![Static Badge](https://img.shields.io/badge/SourceForge-HuMidi_v2.0-orange?logo=sourceforge)](https://sourceforge.net/projects/humidi-roblox-piano-autoplayer/)
+[![Static Badge](https://img.shields.io/badge/Releases-HuMidi_v2.0-blue?logo=github)](https://sourceforge.net/projects/humidi-roblox-piano-autoplayer/)
+![GitHub Repo stars](https://img.shields.io/github/stars/smyGitt/HuMidi-Roblox-Piano-Autoplayer?style=flat)
+[![Download HuMidi](https://img.shields.io/sourceforge/dt/humidi-roblox-piano-autoplayer.svg)](https://sourceforge.net/projects/humidi-roblox-piano-autoplayer/files/latest/download)
+[![Download HuMidi](https://img.shields.io/sourceforge/dw/humidi-roblox-piano-autoplayer.svg)](https://sourceforge.net/projects/humidi-roblox-piano-autoplayer/files/latest/download)
 ### You can download this from the releases or from Sourceforge
 
-[![Download HuMidi](https://img.shields.io/sourceforge/dw/humidi-roblox-piano-autoplayer.svg)](https://sourceforge.net/projects/humidi-roblox-piano-autoplayer/files/latest/download)
 
 
 ## About HuMidi
