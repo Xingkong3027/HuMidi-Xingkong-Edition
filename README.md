@@ -13,7 +13,8 @@ HuMidi includes various humanization options for a natural, human-like playback.
 <img width="326" height="396" alt="A minimized, compact view of HuMidi v2.0. Only necessary buttons are shown." src="https://github.com/user-attachments/assets/11065766-a107-461a-a46f-84f8119098cf" />
 <img width="180" height="326" alt="HuMidi v2.0 with a new Light mode theme, showing a settings page with option to change color theme." src="https://github.com/user-attachments/assets/344cf20a-ffe2-482c-bc71-53c4c378a5ad" />
 
-
+## Note on ML Components
+Future versions of HuMidi may incorporate a trained model from [PedalAI](https://github.com/smyGitt/PedalAI) for sustain pedal generation. For information on training data sources, licensing, and related legal considerations, refer to [PedalAI's README](https://github.com/smyGitt/PedalAI#copyright--intended-use).
 
 # How do you run it?
 ### If you downloaded the file from the releases:
