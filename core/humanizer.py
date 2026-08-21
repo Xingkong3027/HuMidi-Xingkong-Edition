@@ -11,9 +11,10 @@ _DRIFT_NOISE_SIGMA = 0.004
 
 
 class Humanizer:
-    def __init__(self, config: Dict, debug_log: Optional[List[str]] = None):
+    def __init__(self, config: Dict, debug_log: Optional[List[str]] = None, rng=None):
         self.config = config
         self.debug_log = debug_log
+        self.rng = rng or random.Random()
         self.left_hand_drift = 0.0
         self.right_hand_drift = 0.0
 
@@ -63,14 +64,14 @@ class Humanizer:
             # Per-group timing offset: Gaussian noise clamped to ±3σ.
             timing_offset = 0.0
             if vary_timing:
-                timing_offset = random.gauss(0, timing_sigma)
+                timing_offset = self.rng.gauss(0, timing_sigma)
                 timing_offset = max(-3 * timing_sigma, min(3 * timing_sigma, timing_offset))
                 max_timing_offset = max(max_timing_offset, abs(timing_offset))
 
             # Chord roll: stagger simultaneous notes with random speed and direction.
             if enable_chord_roll and len(group) > 1:
-                ascending = random.random() > 0.2   # mostly low-to-high, occasionally reversed
-                stagger   = random.uniform(0.004, 0.010)  # 4–10 ms per step
+                ascending = self.rng.random() > 0.2   # mostly low-to-high, occasionally reversed
+                stagger   = self.rng.uniform(0.004, 0.010)  # 4–10 ms per step
                 group.sort(key=lambda n: n.pitch, reverse=not ascending)
                 for i, note in enumerate(group):
                     note.start_time += i * stagger
@@ -80,7 +81,7 @@ class Humanizer:
             articulation_scale = None
             if vary_articulation:
                 base = self.config.get('articulation', 0.95)
-                articulation_scale = base - random.random() * 0.1
+                articulation_scale = base - self.rng.random() * 0.1
 
             # Apply timing offset and current drift to every note in the group.
             # Drift is read *before* updating so this group uses the previously
@@ -96,7 +97,7 @@ class Humanizer:
 
             # Accumulate independent drift noise for the next group.
             if enable_drift:
-                drift_noise = random.gauss(0, _DRIFT_NOISE_SIGMA)
+                drift_noise = self.rng.gauss(0, _DRIFT_NOISE_SIGMA)
                 if hand == 'left':
                     self.left_hand_drift += drift_noise
                 else:

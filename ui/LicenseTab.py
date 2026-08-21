@@ -8,6 +8,7 @@ _LICENSE_TEXTS: dict[str, str] = {
 MIT License
 
 Copyright (c) 2026 smyGitt
+Modifications Copyright (c) 2026 Xingkong3027
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -29,8 +30,9 @@ SOFTWARE.
 """,
 
     "PedalAI Dataset": """\
-The following datasets were used to train the BiLSTM AI pedal timing
-model bundled with HuMidi.
+The following datasets relate to the planned experimental BiLSTM pedal
+feature. HuMidi Xingkong Edition v2.0.0-xk.1 does not bundle or enable
+an ONNX pedal model.
 
 ────────────────
 POP909        
@@ -76,13 +78,13 @@ pynput
   License : LGPL v3
   URL     : https://github.com/moses-palmer/pynput
 
-onnxruntime
-  License : MIT
-  URL     : https://github.com/microsoft/onnxruntime
-
 numpy
   License : BSD 3-Clause
   URL     : https://numpy.org/
+
+PyInstaller
+  License : GPL v2-or-later with a bootloader exception
+  URL     : https://pyinstaller.org/
 """,
 }
 
@@ -109,8 +111,8 @@ class LicenseTab(QWidget):
         sel_lbl.setFixedWidth(34)
         self._combo = QComboBox()
         for name in _LICENSE_TEXTS:
-            self._combo.addItem(name)
-        self._combo.currentTextChanged.connect(self._on_changed)
+            self._combo.addItem(name, name)
+        self._combo.currentIndexChanged.connect(self._on_changed)
         selector_row.addWidget(sel_lbl)
         selector_row.addWidget(self._combo, 1)
         layout.addLayout(selector_row)
@@ -118,8 +120,18 @@ class LicenseTab(QWidget):
         self._text = QTextEdit()
         self._text.setReadOnly(True)
         self._text.setFont(QFont("Courier New", 9))
-        self._text.setPlainText(_LICENSE_TEXTS.get(self._combo.currentText(), ""))
+        self._text.setPlainText(_LICENSE_TEXTS.get(str(self._combo.currentData()), ""))
         layout.addWidget(self._text)
 
-    def _on_changed(self, name: str) -> None:
-        self._text.setPlainText(_LICENSE_TEXTS.get(name, ""))
+    def _on_changed(self, _index: int) -> None:
+        self._text.setPlainText(_LICENSE_TEXTS.get(str(self._combo.currentData()), ""))
+
+    def retranslate_combo_items(self, tr) -> None:
+        current = str(self._combo.currentData() or "HuMidi")
+        self._combo.blockSignals(True)
+        self._combo.clear()
+        for name in _LICENSE_TEXTS:
+            self._combo.addItem(tr(name), name)
+        self._combo.setCurrentIndex(max(0, self._combo.findData(current)))
+        self._combo.blockSignals(False)
+        self._on_changed(self._combo.currentIndex())

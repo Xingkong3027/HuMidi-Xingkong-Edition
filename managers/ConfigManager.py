@@ -14,16 +14,17 @@ class ConfigManager:
         self.save_dir = os.path.join(self.root_dir, 'saves')
         os.makedirs(self.save_dir, exist_ok=True)
         
-        self.config_dir = Path.home() / ".humidi"
+        # Keep Xingkong Edition settings separate from the upstream HuMidi app.
+        self.config_dir = Path.home() / ".humidi-xingkong"
         self.config_path = self.config_dir / "config.json"
-        self.config_dir.mkdir(exist_ok=True)
+        self.config_dir.mkdir(parents=True, exist_ok=True)
 
     def load(self) -> dict:
-        """Reads configuration data from Windows local appdata."""
+        """Read the Xingkong Edition configuration file."""
         if not self.config_path.exists(): 
             return {}
         try:
-            with open(self.config_path, 'r') as f:
+            with open(self.config_path, 'r', encoding='utf-8') as f:
                 config = json.load(f)
                 if config.get('save_dir') and os.path.exists(config.get('save_dir')):
                     self.save_dir = config.get('save_dir')
@@ -35,8 +36,8 @@ class ConfigManager:
         """Persists the current application state to JSON."""
         config_data['save_dir'] = self.save_dir
         try:
-            with open(self.config_path, 'w') as f:
-                json.dump(config_data, f, indent=4)
+            with open(self.config_path, 'w', encoding='utf-8') as f:
+                json.dump(config_data, f, ensure_ascii=False, indent=4)
         except Exception as e:
             print(f"Error saving config: {e}")
 

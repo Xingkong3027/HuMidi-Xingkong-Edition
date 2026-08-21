@@ -11,15 +11,19 @@ from ui.theme import ThemeManager, generate_stylesheet
 
 
 class LoadSaveDialog(QDialog):
-    def __init__(self, save_dir, parent=None):
+    def __init__(self, save_dir, parent=None, language_manager=None):
         super().__init__(parent)
-        self.setWindowTitle("Load Saved Playback")
+        self.language_manager = language_manager
+        self.setWindowTitle(self._t("Load Saved Playback"))
         self.resize(820, 520)
         self.setStyleSheet(generate_stylesheet(ThemeManager.get_active()))
         self.save_dir = save_dir
         self.selected_file = None
         self._setup_ui()
         self._load_files()
+
+    def _t(self, text):
+        return self.language_manager.tr(text) if self.language_manager else text
 
     def _setup_ui(self):
         layout = QVBoxLayout(self)
@@ -55,11 +59,11 @@ class LoadSaveDialog(QDialog):
         btn_layout = QHBoxLayout()
         btn_layout.setSpacing(6)
 
-        self.rename_btn = QPushButton("Rename")
-        self.delete_btn = QPushButton("Delete")
+        self.rename_btn = QPushButton(self._t("Rename"))
+        self.delete_btn = QPushButton(self._t("Delete"))
         self.delete_btn.setObjectName("stop_button")   # reuse red styling
-        self.cancel_btn = QPushButton("Cancel")
-        self.load_btn = QPushButton("Load")
+        self.cancel_btn = QPushButton(self._t("Cancel"))
+        self.load_btn = QPushButton(self._t("Load"))
         self.load_btn.setObjectName("save_button")     # reuse accent styling
 
         self.rename_btn.setEnabled(False)
@@ -160,8 +164,8 @@ class LoadSaveDialog(QDialog):
             pass
 
         new_name, ok = QInputDialog.getText(
-            self, "Rename Save",
-            "Enter custom name (leave blank to revert to timestamp):",
+            self, self._t("Rename Save"),
+            self._t("Enter custom name (leave blank to revert to timestamp):"),
             text=current_custom
         )
         if ok:
@@ -177,14 +181,14 @@ class LoadSaveDialog(QDialog):
                 self._load_files()
                 self._disable_actions()
             except Exception as e:
-                QMessageBox.critical(self, "Error", f"Could not rename file:\n{e}")
+                QMessageBox.critical(self, self._t("Error"), self._t("Could not rename file:") + f"\n{e}")
 
     def _delete_save(self):
         if not self.selected_file:
             return
         reply = QMessageBox.question(
-            self, 'Delete Save',
-            'Are you sure you want to permanently delete this save?',
+            self, self._t("Delete Save"),
+            self._t("Are you sure you want to permanently delete this save?"),
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
         )
         if reply == QMessageBox.StandardButton.Yes:
@@ -193,7 +197,7 @@ class LoadSaveDialog(QDialog):
                 self._load_files()
                 self._disable_actions()
             except Exception as e:
-                QMessageBox.critical(self, "Error", f"Could not delete file:\n{e}")
+                QMessageBox.critical(self, self._t("Error"), self._t("Could not delete file:") + f"\n{e}")
 
     def _clear_details(self):
         new_widget = QWidget()
@@ -235,7 +239,7 @@ class LoadSaveDialog(QDialog):
         settings = metadata.get('playback_settings', {})
 
         # Playback settings
-        pb_label = QLabel("Playback Settings")
+        pb_label = QLabel(self._t("Playback Settings"))
         pb_label.setProperty("role", "section")
         self.details_layout.addWidget(pb_label)
 
@@ -244,21 +248,21 @@ class LoadSaveDialog(QDialog):
         pb_grid.setColumnMinimumWidth(1, 12)
 
         def add_row(grid, row, key_str, val_str):
-            k = QLabel(key_str)
+            k = QLabel(self._t(key_str))
             k.setProperty("role", "muted")
-            v = QLabel(str(val_str))
+            v = QLabel(self._t(str(val_str)))
             v.setProperty("role", "value")
             grid.addWidget(k, row, 0)
             grid.addWidget(v, row, 2)
 
         add_row(pb_grid, 0, "Tempo", f"{settings.get('tempo', 100)}%")
-        add_row(pb_grid, 1, "Pedal Style", settings.get('pedal_style', 'hybrid').title())
-        add_row(pb_grid, 2, "88-Key Layout", "Yes" if settings.get('use_88_key_layout') else "No")
+        add_row(pb_grid, 1, "Pedal Style", self._t(settings.get('pedal_style', 'hybrid').title()))
+        add_row(pb_grid, 2, "88-Key Layout", self._t("Yes" if settings.get('use_88_key_layout') else "No"))
         self.details_layout.addLayout(pb_grid)
         self.details_layout.addSpacing(8)
 
         # Humanization
-        hum_label = QLabel("Humanization")
+        hum_label = QLabel(self._t("Humanization"))
         hum_label.setProperty("role", "section")
         self.details_layout.addWidget(hum_label)
 
@@ -269,9 +273,9 @@ class LoadSaveDialog(QDialog):
 
         def add_h_row(key_str, val_str):
             nonlocal h_row
-            k = QLabel(key_str)
+            k = QLabel(self._t(key_str))
             k.setProperty("role", "muted")
-            v = QLabel(str(val_str))
+            v = QLabel(self._t(str(val_str)))
             v.setProperty("role", "value")
             hum_grid.addWidget(k, h_row, 0)
             hum_grid.addWidget(v, h_row, 2)
@@ -297,7 +301,7 @@ class LoadSaveDialog(QDialog):
                       f"{settings.get('tempo_sway_intensity', 0.0)}s{inv}")
 
         if h_row == 0:
-            none_lbl = QLabel("None selected")
+            none_lbl = QLabel(self._t("None selected"))
             none_lbl.setProperty("role", "muted")
             none_lbl.setStyleSheet("font-style: italic;")
             hum_grid.addWidget(none_lbl, 0, 0)

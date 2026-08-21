@@ -1,5 +1,47 @@
-from PyQt6.QtWidgets import QFrame, QVBoxLayout, QLabel
+from PyQt6.QtWidgets import (
+    QFrame, QVBoxLayout, QLabel, QSlider, QComboBox, QSpinBox, QDoubleSpinBox,
+    QAbstractScrollArea,
+)
 from PyQt6.QtCore import Qt, QEvent, pyqtSignal as Signal
+
+
+class _NoWheelMixin:
+    """Route wheel input to a containing scroll area instead of changing value."""
+
+    def wheelEvent(self, event):
+        parent = self.parentWidget()
+        while parent is not None and not isinstance(parent, QAbstractScrollArea):
+            parent = parent.parentWidget()
+        if parent is None:
+            event.ignore()
+            return
+        bar = parent.verticalScrollBar()
+        pixel_delta = event.pixelDelta().y()
+        if pixel_delta:
+            amount = -pixel_delta
+        else:
+            amount = round(
+                -(event.angleDelta().y() / 120.0) * max(1, bar.singleStep()) * 3
+            )
+        if amount:
+            bar.setValue(bar.value() + amount)
+        event.accept()
+
+
+class NoWheelSlider(_NoWheelMixin, QSlider):
+    pass
+
+
+class NoWheelComboBox(_NoWheelMixin, QComboBox):
+    pass
+
+
+class NoWheelSpinBox(_NoWheelMixin, QSpinBox):
+    pass
+
+
+class NoWheelDoubleSpinBox(_NoWheelMixin, QDoubleSpinBox):
+    pass
 
 
 class NavButton(QFrame):
@@ -35,6 +77,12 @@ class NavButton(QFrame):
 
         vbox.addWidget(self._icon_lbl)
         vbox.addWidget(self._text_lbl)
+
+    def set_label(self, text: str) -> None:
+        self._text_lbl.setText(text)
+
+    def label(self) -> str:
+        return self._text_lbl.text()
 
     def mousePressEvent(self, event):
         if event.button() == Qt.MouseButton.LeftButton:

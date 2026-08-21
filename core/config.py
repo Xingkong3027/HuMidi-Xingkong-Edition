@@ -29,6 +29,12 @@ class PlaybackConfig(TypedDict, total=False):
     enable_mistakes: bool
     mistake_chance: float
     countdown: bool
+    countdown_seconds: int
+    trim_enabled: bool
+    trim_auto: bool
+    trim_start_seconds: float
+    trim_end_seconds: float
     auto_pause: bool
+    performance_optimization: bool
     debug_mode: bool
     use_ai_pedal: bool
