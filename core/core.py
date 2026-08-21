@@ -5,6 +5,20 @@ from typing import List, Tuple, Dict, Optional
 from core.models import Note, MidiTrack
 from pynput.keyboard import Key
 
+
+
+from core.midi_text import decode_midi_text
+
+
+class MidiInvalidDataByteError(IOError):
+    """Raised when strict MIDI parsing finds an out-of-range data byte."""
+
+    def __init__(self, filepath: str, original_error: Exception):
+        self.filepath = str(filepath)
+        self.original_error = original_error
+        super().__init__(f"Could not read MIDI file: {original_error}")
+
+
 def get_time_groups(notes: List[Note], threshold: float = 0.015) -> List[List[Note]]:
     if not notes: return []
     groups, current_group = [], [notes[0]]
@@ -124,14 +138,26 @@ class GlobalTickMap:
 
 class MidiParser:
     @staticmethod
-    def parse_structure(filepath: str, tempo_scale: float = 1.0, debug_log: Optional[List[str]] = None) -> Tuple[List[MidiTrack], TempoMap]:
+    def parse_structure(
+        filepath: str,
+        tempo_scale: float = 1.0,
+        debug_log: Optional[List[str]] = None,
+        clip_invalid_data: bool = False,
+    ) -> Tuple[List[MidiTrack], TempoMap]:
         try:
-            try:
-                mid = mido.MidiFile(filepath, charset='utf-8')
-            except UnicodeDecodeError:
-                mid = mido.MidiFile(filepath)
+            # Latin-1 preserves every original byte. Track names are repaired
+            # individually by decode_midi_text(), which supports UTF-8, GB18030,
+            # Big5, and Shift-JIS without corrupting ordinary ASCII names.
+            mid = mido.MidiFile(
+                filepath,
+                charset='latin1',
+                clip=bool(clip_invalid_data),
+            )
         except Exception as e:
-            raise IOError(f"Could not read MIDI file: {e}")
+            if (not clip_invalid_data
+                    and "data byte must be in range 0..127" in str(e)):
+                raise MidiInvalidDataByteError(filepath, e) from e
+            raise IOError(f"Could not read MIDI file: {e}") from e
             
         global_map = GlobalTickMap(mid)
         tempo_map_data = [(entry[1], entry[2]) for entry in global_map.tick_map]
@@ -149,7 +175,7 @@ class MidiParser:
             
             for msg in track:
                 current_abs_tick += msg.time
-                if msg.type == 'track_name': track_name = msg.name
+                if msg.type == 'track_name': track_name = decode_midi_text(msg.name)
                 if msg.type == 'program_change':
                     program_change = msg.program
                     if msg.channel == 9: is_drum = True

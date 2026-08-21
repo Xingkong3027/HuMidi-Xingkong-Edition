@@ -6,7 +6,7 @@ A ThemeColors holds the 9 user-visible colour slots.  Everything else
 automatically by generate_stylesheet().
 
 ThemeManager persists custom themes and the active-theme name to
-  ~/.humidi/themes.json
+  ~/.humidi-xingkong/themes.json
 """
 
 from __future__ import annotations
@@ -111,6 +111,9 @@ QWidget {
     font-family: "Segoe UI";
     font-size: 10pt;
 }
+QLabel:disabled {
+    color: %(dis_text)s;
+}
 QWidget#main_widget, QStackedWidget {
     background-color: %(bg_primary)s;
 }
@@ -193,7 +196,10 @@ QPushButton#play_button {
     color: #ffffff;
     font-weight: bold;
     min-width: 90px;
+    text-align: left;
+    padding-left: 14px;
 }
+
 QPushButton#play_button:hover {
     background-color: %(accent_play_hover)s;
     border: none;
@@ -297,6 +303,17 @@ QDoubleSpinBox, QSpinBox, QLineEdit {
 QDoubleSpinBox:focus, QSpinBox:focus, QLineEdit:focus {
     border-color: %(accent)s;
 }
+QDoubleSpinBox:disabled,
+QSpinBox:disabled,
+QLineEdit:disabled {
+    background-color: %(dis_bg)s;
+    border-color: %(dis_border)s;
+    color: %(dis_text)s;
+}
+QDoubleSpinBox::up-button:disabled, QDoubleSpinBox::down-button:disabled,
+QSpinBox::up-button:disabled, QSpinBox::down-button:disabled {
+    background-color: %(dis_bg)s;
+}
 QDoubleSpinBox::up-button, QDoubleSpinBox::down-button,
 QSpinBox::up-button, QSpinBox::down-button {
     background-color: %(spinner_btn)s;
@@ -344,13 +361,22 @@ QComboBox {
     color: %(text_primary)s;
     min-height: 26px;
 }
-QComboBox:hover {
+QComboBox:hover:!disabled {
     border-color: %(accent)s;
+}
+QComboBox:disabled {
+    background-color: %(dis_bg)s;
+    border-color: %(dis_border)s;
+    color: %(dis_text)s;
 }
 QComboBox::drop-down {
     border: none;
     padding-right: 8px;
     width: 20px;
+}
+QComboBox::drop-down:disabled {
+    background-color: %(dis_bg)s;
+    border: none;
 }
 QComboBox QAbstractItemView {
     background-color: %(bg_input)s;
@@ -530,6 +556,15 @@ QLabel#time_label {
     font-weight: 600;
     color: %(text_primary)s;
 }
+QLabel#now_playing_label {
+    color: %(text_primary)s;
+    font-size: 9pt;
+    font-weight: 600;
+}
+QLabel#playback_source_label {
+    color: %(text_secondary)s;
+    font-size: 8pt;
+}
 QLabel#file_path_label {
     color: %(text_secondary)s;
     font-style: italic;
@@ -640,6 +675,11 @@ QPushButton#stop_button[icon_mode="true"] {
     font-family: "Segoe MDL2 Assets";
     font-size: 14pt;
     min-width: 0;
+    text-align: center;
+    padding-left: 5px;
+}
+QListWidget#collapsed_playlist_list {
+    min-height: 120px;
 }
 QPushButton#save_button[icon_mode="true"],
 QPushButton#reset_button[icon_mode="true"] {
@@ -745,8 +785,8 @@ def generate_stylesheet(c: ThemeColors) -> str:
 class ThemeManager:
     """Loads/saves custom themes and the active theme name from disk."""
 
-    _themes_dir = Path.home() / ".humidi"
-    _themes_file = Path.home() / ".humidi" / "themes.json"
+    _themes_dir = Path.home() / ".humidi-xingkong"
+    _themes_file = _themes_dir / "themes.json"
 
     # ── Disk I/O ──────────────────────────────────────────────────────
 

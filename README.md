@@ -1,70 +1,128 @@
-# HuMidi
+# HuMidi: Xingkong Edition
 
-[![Static Badge](https://img.shields.io/badge/SourceForge-HuMidi_v2.0-orange?logo=sourceforge)](https://sourceforge.net/projects/humidi-roblox-piano-autoplayer/)
-[![Static Badge](https://img.shields.io/badge/Releases-HuMidi_v2.0-blue?logo=github)](https://github.com/smyGitt/HuMidi-Roblox-Piano-Autoplayer/releases)
-![GitHub Repo stars](https://img.shields.io/github/stars/smyGitt/HuMidi-Roblox-Piano-Autoplayer?style=flat)
-[![Download HuMidi](https://img.shields.io/sourceforge/dt/humidi-roblox-piano-autoplayer.svg)](https://sourceforge.net/projects/humidi-roblox-piano-autoplayer/files/latest/download)
-[![Download HuMidi](https://img.shields.io/sourceforge/dw/humidi-roblox-piano-autoplayer.svg)](https://sourceforge.net/projects/humidi-roblox-piano-autoplayer/files/latest/download)
-[![](https://dcbadge.limes.pink/api/server/https://discord.gg/bRaXP9gYZN?style=flat)](https://discord.gg/bRaXP9gYZN)
-### You can download the latest version of HuMidi from the Releases or from Sourceforge.
-### If you have any issues with HuMidi, please create a new issue here or in the Discord server. Thank you!
+> 非官方 HuMidi 衍生版本 / Unofficial derivative of HuMidi
 
+HuMidi: Xingkong Edition 基于
+[smyGitt/HuMidi-Roblox-Piano-Autoplayer](https://github.com/smyGitt/HuMidi-Roblox-Piano-Autoplayer)
+修改，保留 HuMidi 的 MIDI 解析、模拟人演奏和 Roblox 钢琴键盘输出能力，并增加高级歌单、
+简体中文界面、批量 MIDI、输入兼容性修复及可选性能优化。
 
+HuMidi: Xingkong Edition is an unofficial derivative of HuMidi. It preserves
+HuMidi's MIDI parsing, human-like performance, and Roblox piano keyboard output
+while adding advanced playlists, Simplified Chinese localization, batch MIDI
+tools, input compatibility fixes, and optional dense-MIDI optimizations.
 
-## About HuMidi
-HuMidi includes various humanization options for a natural, human-like playback. Including automatic pedal timing and 88-key keyboard support. Easy to run via executable or source code, with GUI support included.
+当前版本 / Current version: **2.0.0-xk.1 Preview**
 
+## 主要功能
 
-<img width="326" height="396" alt="HuMidi v2.0 Expanded view with all Humanization and related options in playback" src="https://github.com/user-attachments/assets/e253ae9e-9280-4cb9-97bb-4ad6ac302237" />
-<img width="326" height="396" alt="A minimized, compact view of HuMidi v2.0. Only necessary buttons are shown." src="https://github.com/user-attachments/assets/11065766-a107-461a-a46f-84f8119098cf" />
-<img width="180" height="326" alt="HuMidi v2.0 with a new Light mode theme, showing a settings page with option to change color theme." src="https://github.com/user-attachments/assets/344cf20a-ffe2-482c-bc71-53c4c378a5ad" />
+- 简体中文 / English 运行时切换；
+- 五种歌单播放模式和可滚动迷你歌单；
+- MIDI 与文本乐谱歌单；
+- 普通及自包含 `.humidiplaylist` 导入/导出；
+- 歌曲修改、原 MIDI 保留和批量操作；
+- 动态、固定随机及固定自定义种子；
+- 多 MIDI 导入、自动/手动轨道选择；
+- 多组播放快捷键及 Windows 媒体键；
+- 非标准 MIDI 数据字节的显式 clip 修复流程；
+- 可选密集 MIDI 性能优化；保留原有 `pynput` 输入后端，以维持 Roblox 兼容性。
 
-## Note on ML Components
-Future versions of HuMidi may incorporate a trained model from [PedalAI](https://github.com/smyGitt/PedalAI) for sustain pedal generation. For information on training data sources, licensing, and related legal considerations, refer to [PedalAI's README](https://github.com/smyGitt/PedalAI#copyright--intended-use).
+完整功能说明见 [`README_PLAYLIST_EDITION.md`](README_PLAYLIST_EDITION.md)，
+变更记录见 [`CHANGELOG.md`](CHANGELOG.md)，上传和发布步骤见
+[`PUBLISHING.md`](PUBLISHING.md)。
 
-# How do you run it?
-### If you downloaded the file from the releases:
-  just run the `.exe` or `.dmg`! 
+## 运行源码
 
-### Or, if you don't trust me...
-You can create your own `.exe` or `.dmg` with pyinstaller. I've provided the icon `icon.ico` (or `icon.icns` for MacOS), so use with this command:
+推荐使用 Python 3.11：
 
-For Windows:
-    
-    pyinstaller --onefile --noconsole --name HuMidi --icon icon.ico --add-data "icon.ico;." main.py
+```powershell
+py -3.11 -m venv .venv
+.\.venv\Scripts\python.exe -m pip install --upgrade pip
+.\.venv\Scripts\python.exe -m pip install -r requirements.txt
+.\.venv\Scripts\python.exe main.py
+```
 
-For Mac:
+Linux/macOS：
 
-    pyinstaller --onefile --windowed --name HuMidi --icon icon.icns --add-data "icon.ico:." main.py
+```bash
+python3.11 -m venv .venv
+.venv/bin/python -m pip install --upgrade pip
+.venv/bin/python -m pip install -r requirements.txt
+.venv/bin/python main.py
+```
 
-  make sure the `.ico` or `.icns` file and `.py` file is in the same directory.
+## 测试
 
-### ...if you choose to do neither above:
-You need to run this in a command prompt. After you navigate to where the `.py` files are. type for example:
+```powershell
+.\.venv\Scripts\python.exe -m ruff check .
+.\.venv\Scripts\python.exe -m compileall -q .
+.\.venv\Scripts\python.exe -m unittest discover -s tests -v
+```
 
-    python main.py
-    
-  else if you are not going to use the `main.py` with GUI, for whatever reason, navigate to the backup folder, open command prompt there, then enter:
+发布前还必须在真实 Windows 和 Roblox 钢琴体验中测试按键输入、暂停/恢复、停止释放按键、
+性能优化模式和快捷键。自动化输入是否允许取决于 Roblox 及具体体验的规则。
 
-    python final_beforeGUI.py --help
+## Windows 单文件打包
 
-  (of course, you may replace `final_beforeGUI.py` with `noDuration.py`, or any in the backup if desired)
+```powershell
+.\.venv\Scripts\python.exe -m PyInstaller `
+  --noconfirm --clean --onefile --noconsole `
+  --name "HuMidi-Xingkong-Edition" `
+  --icon ".\icon.ico" `
+  --add-data ".\icon.ico;." `
+  --add-data ".\NOTICE.md;." `
+  --add-data ".\THIRD_PARTY_NOTICES.md;." `
+  main.py
+```
 
-this will show you all the available flags and formatting. Though I can't guarantee the same quality from the GUI versions, because the noGUI version hasn't been updated at all.
+输出文件：
 
-Remember that it accepts `.mid` files only. it works best with piano-only `.mid`, but I've seen it work with mixed instruments.
+```text
+dist\HuMidi-Xingkong-Edition.exe
+```
 
-# Dependencies
-If you chose to not trust me (not judging) and did not want to use the `exe` in the releases, you might need to install a few python libraries. You will see that `main.py` and other `.py` files import various libraries. You can't run this application without downloading all of them. Some (not all) are:
+## 数据位置
 
-    import mido, time, headpq, threading, random, copy, numpy, sys, dataclasses, import, collections, os, PyQt6  
+Xingkong Edition 使用独立配置目录，不会与上游 HuMidi 共用设置：
 
-and there may be more for the other `.py` files. Please check if you have every one of these libraries installed.
+```text
+%USERPROFILE%\.humidi-xingkong\
+├── config.json
+├── themes.json
+└── playlist\
+    ├── index.json
+    ├── items\
+    ├── midi\
+    └── cache\
+```
 
-if you get some warning about pyinstaller not being compatible with some module, like `typing`, then just uninstall it with 
+项目根目录的 `saves` 用于 Playback 存档。`.humidi` 与
+`.humidi-xingkong` 不会自动合并或删除。
 
-    pip uninstall <MODULE NAME>
-    
-  or
-  
-    python -m pip uninstall <MODULE NAME>
+## 更新
+
+应用只检查 Xingkong Edition 自己的 GitHub Releases 页面。发现新版本时只询问是否打开下载
+页面，不会静默下载或替换正在运行的程序。发布附件提供 SHA-256 校验值。
+
+## 项目关系与免责声明
+
+- 原项目：<https://github.com/smyGitt/HuMidi-Roblox-Piano-Autoplayer>
+- Xingkong Edition：<https://github.com/Xingkong3027/HuMidi-Xingkong-Edition>
+- 本项目不是 HuMidi 官方版本，也不隶属于或受 Roblox Corporation 认可。
+- “Roblox”仅用于说明第三方体验兼容性。
+
+详细署名见 [`NOTICE.md`](NOTICE.md)。
+
+## 许可证
+
+上游 HuMidi 源码以 MIT License 发布，原作者声明被完整保留。Xingkong Edition 使用的免费
+PyQt6 采用 GPL v3，因此分发 PyInstaller 打包程序时不能将组合发行物描述为“仅 MIT”。
+请同时阅读：
+
+- [`LICENSE`](LICENSE)
+- [`LICENSES/HuMidi-MIT.txt`](LICENSES/HuMidi-MIT.txt)
+- [`LICENSES/GPL-3.0.txt`](LICENSES/GPL-3.0.txt)
+- [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md)
+
+如需闭源或商业发行，应取得适当的 PyQt 商业许可证，或在完成许可证审查后迁移到其他 Qt
+绑定。本说明不是正式法律意见。

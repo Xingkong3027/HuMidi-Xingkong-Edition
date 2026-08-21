@@ -1,4 +1,4 @@
-name: Release
+name: Release Windows
 
 on:
   push:
@@ -7,248 +7,169 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: "Tag to release (e.g. v1.4) — the tag must already exist in the repo"
+        description: "Existing tag to release, for example v2.0.0-xk.1"
         required: true
         type: string
 
+permissions:
+  contents: read
+
 jobs:
   check-version:
-    name: Verify version matches tag
+    name: Verify version and tag
     runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.tag.outputs.name }}
 
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
       - name: Resolve tag name
         id: tag
+        shell: bash
         run: |
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            echo "name=${{ github.event.inputs.tag }}" >> "$GITHUB_OUTPUT"
+            echo "name=${{ inputs.tag }}" >> "$GITHUB_OUTPUT"
           else
             echo "name=${{ github.ref_name }}" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Extract APP_VERSION from main.py
-        id: app_version
-        run: |
-          VERSION=$(python3 -c "
-          import re, sys
-          content = open('main.py').read()
-          m = re.search(r'^APP_VERSION\s*=\s*[\"\']([\d.]+)[\"\']\s*$', content, re.MULTILINE)
-          if not m:
-              print('ERROR: APP_VERSION not found in main.py', file=sys.stderr)
-              sys.exit(1)
-          print(m.group(1))
-          ")
-          echo "value=$VERSION" >> "$GITHUB_OUTPUT"
+      - name: Checkout tagged source
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ steps.tag.outputs.name }}
 
-      - name: Compare versions
-        run: |
-          TAG_VERSION="${{ steps.tag.outputs.name }}"
-          TAG_VERSION="${TAG_VERSION#v}"
-          APP_VERSION="${{ steps.app_version.outputs.value }}"
-          echo "Tag version : $TAG_VERSION"
-          echo "APP_VERSION : $APP_VERSION"
-          if [ "$TAG_VERSION" != "$APP_VERSION" ]; then
-            echo "::error::Version mismatch — tag is 'v$TAG_VERSION' but APP_VERSION in main.py is '$APP_VERSION'. Update APP_VERSION before tagging."
-            exit 1
-          fi
-          echo "Versions match: $APP_VERSION ✓"
-
-      - name: Check new version is greater than latest release
+      - name: Verify APP_VERSION matches tag
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          NEW_TAG: ${{ steps.tag.outputs.name }}
+          RELEASE_TAG: ${{ steps.tag.outputs.name }}
+        shell: bash
         run: |
-          python3 << 'EOF'
-          import json, os, sys, urllib.request, urllib.error
+          python3 <<'PY'
+          import os
+          import re
+          from pathlib import Path
 
-          new_version = os.environ["NEW_TAG"].lstrip("v")
-          token = os.environ["GH_TOKEN"]
-
-          req = urllib.request.Request(
-              "https://api.github.com/repos/smyGitt/HuMidi-Roblox-Piano-Autoplayer/releases/latest",
-              headers={
-                  "Authorization": f"Bearer {token}",
-                  "User-Agent": "HuMidi-ci",
-                  "Accept": "application/vnd.github+json",
-              },
+          content = Path("main.py").read_text(encoding="utf-8")
+          match = re.search(
+              r'^APP_VERSION\s*=\s*["\']([^"\']+)["\']\s*$',
+              content,
+              re.MULTILINE,
           )
-          try:
-              with urllib.request.urlopen(req, timeout=10) as resp:
-                  data = json.loads(resp.read())
-              latest_tag = data.get("tag_name", "").lstrip("v")
-          except urllib.error.HTTPError as e:
-              if e.code == 404:
-                  print("No previous release found — skipping version order check.")
-                  sys.exit(0)
-              raise
+          if match is None:
+              raise SystemExit("APP_VERSION was not found in main.py")
+          app_version = match.group(1)
+          tag_version = os.environ["RELEASE_TAG"].removeprefix("v")
+          print(f"Tag version: {tag_version}")
+          print(f"App version: {app_version}")
+          if tag_version != app_version:
+              raise SystemExit(
+                  f"Tag v{tag_version} does not match APP_VERSION {app_version}"
+              )
+          if re.fullmatch(r"\d+\.\d+\.\d+-xk\.\d+", app_version) is None:
+              raise SystemExit(
+                  "Xingkong Edition versions must use MAJOR.MINOR.PATCH-xk.N"
+              )
+          PY
 
-          def parse(v):
-              return tuple(int(x) for x in v.split("."))
-
-          new_t    = parse(new_version)
-          latest_t = parse(latest_tag)
-
-          print(f"Latest release : v{latest_tag}")
-          print(f"New tag        : v{new_version}")
-
-          if new_t <= latest_t:
-              print(f"::error::v{new_version} is not greater than the latest release v{latest_tag}. Bump APP_VERSION and use a higher tag.")
-              sys.exit(1)
-
-          print("Version order OK ✓")
-          EOF
   build-windows:
     name: Build Windows executable
     runs-on: windows-latest
     needs: check-version
 
     steps:
-      - name: Checkout repository
+      - name: Checkout tagged source
         uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.check-version.outputs.tag }}
 
       - name: Set up Python 3.11
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
+          cache: pip
 
       - name: Install dependencies
-        run: pip install -r requirements.txt
+        run: python -m pip install -r requirements.txt
 
-      - name: Build HuMidi
+      - name: Run tests
+        run: python -m unittest discover -s tests -v
+
+      - name: Build executable
+        shell: pwsh
         run: >
           pyinstaller
+          --noconfirm
+          --clean
           --onefile
           --noconsole
-          --name HuMidi
+          --name HuMidi-Xingkong-Edition
           --icon icon.ico
           --add-data "icon.ico;."
+          --add-data "NOTICE.md;."
+          --add-data "THIRD_PARTY_NOTICES.md;."
           main.py
+
+      - name: Package Windows distribution
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Path dist/windows-package
+          Copy-Item dist/HuMidi-Xingkong-Edition.exe dist/windows-package/
+          Copy-Item LICENSE,NOTICE.md,THIRD_PARTY_NOTICES.md dist/windows-package/
+          Copy-Item LICENSES dist/windows-package/LICENSES -Recurse
+          Compress-Archive -Path dist/windows-package/* -DestinationPath dist/HuMidi-Xingkong-Edition-Windows.zip
 
       - name: Upload Windows artifact
         uses: actions/upload-artifact@v4
         with:
           name: windows-exe
-          path: dist/HuMidi.exe
-          if-no-files-found: error
-          
-  build-macos:
-    name: Build macOS DMG
-    runs-on: macos-latest
-    needs: check-version
-
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Set up Python 3.11
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
-
-      - name: Install dependencies
-        run: pip install -r requirements.txt pillow
-
-      - name: Build .app bundle
-        run: >
-          pyinstaller
-          --windowed
-          --name HuMidi
-          --icon icon.icns
-          --add-data "icon.ico:."
-          main.py
-
-      - name: Create DMG from .app bundle
-        working-directory: dist
-        run: >
-          hdiutil create
-          -volname "HuMidi"
-          -srcfolder "HuMidi.app"
-          -ov
-          -format UDZO
-          HuMidi.dmg
-
-      - name: Upload macOS DMG artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: macos-dmg
-          path: dist/HuMidi.dmg
-          if-no-files-found: error
-
-  build-linux:
-    name: Build Linux binary
-    runs-on: ubuntu-latest
-    needs: check-version
-
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Set up Python 3.11
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
-
-      - name: Install system dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y libgl1 libegl1 libxkbcommon0 libdbus-1-3
-
-      - name: Install dependencies
-        run: pip install -r requirements.txt
-
-      - name: Build HuMidi
-        run: >
-          pyinstaller
-          --onefile
-          --windowed
-          --name HuMidi
-          --add-data "icon.ico:."
-          main.py
-
-      - name: Package as HuMidi.tar.gz
-        working-directory: dist
-        run: tar -czf HuMidi.tar.gz HuMidi
-
-      - name: Upload Linux artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: linux-tar
-          path: dist/HuMidi.tar.gz
+          path: |
+            dist/HuMidi-Xingkong-Edition.exe
+            dist/HuMidi-Xingkong-Edition-Windows.zip
           if-no-files-found: error
 
   release:
-    name: Create GitHub Release
+    name: Create GitHub prerelease
     runs-on: ubuntu-latest
-    needs: [build-windows, build-macos, build-linux]
+    needs: [check-version, build-windows]
     permissions:
       contents: write
 
     steps:
-      - name: Resolve tag name
-        id: tag
-        run: |
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            echo "name=${{ github.event.inputs.tag }}" >> "$GITHUB_OUTPUT"
-          else
-            echo "name=${{ github.ref_name }}" >> "$GITHUB_OUTPUT"
-          fi
+      - name: Checkout tagged source
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.check-version.outputs.tag }}
 
-      - name: Download all artifacts
+      - name: Download build artifacts
         uses: actions/download-artifact@v4
         with:
-          path: artifacts/
+          path: artifacts
 
-      - name: Create GitHub Release
+      - name: Prepare release assets and checksums
+        shell: bash
+        run: |
+          mkdir release-assets
+          cp artifacts/windows-exe/HuMidi-Xingkong-Edition.exe release-assets/
+          cp artifacts/windows-exe/HuMidi-Xingkong-Edition-Windows.zip release-assets/
+          cp LICENSE NOTICE.md THIRD_PARTY_NOTICES.md release-assets/
+          cp -R LICENSES release-assets/LICENSES
+          cd release-assets
+          sha256sum \
+            HuMidi-Xingkong-Edition.exe \
+            HuMidi-Xingkong-Edition-Windows.zip \
+            > SHA256SUMS.txt
+
+      - name: Create GitHub prerelease
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ steps.tag.outputs.name }}
-          name: "HuMidi ${{ steps.tag.outputs.name }}"
+          tag_name: ${{ needs.check-version.outputs.tag }}
+          name: "HuMidi: Xingkong Edition ${{ needs.check-version.outputs.tag }}"
           draft: false
-          prerelease: false
+          prerelease: true
+          generate_release_notes: true
           files: |
-            artifacts/windows-exe/HuMidi.exe
-            artifacts/macos-dmg/HuMidi.dmg
-            artifacts/linux-tar/HuMidi.tar.gz
+            release-assets/HuMidi-Xingkong-Edition.exe
+            release-assets/HuMidi-Xingkong-Edition-Windows.zip
+            release-assets/SHA256SUMS.txt
+            release-assets/LICENSE
+            release-assets/NOTICE.md
+            release-assets/THIRD_PARTY_NOTICES.md
+            release-assets/LICENSES/*

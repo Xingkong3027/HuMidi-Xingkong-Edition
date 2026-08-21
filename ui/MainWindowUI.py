@@ -1,11 +1,14 @@
-from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QPushButton,
-                             QCheckBox, QSlider, QLabel, QStackedWidget, QFrame,
-                             QSizePolicy)
+from PyQt6.QtWidgets import (
+    QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QSlider, QLabel,
+    QStackedWidget, QFrame, QSizePolicy, QComboBox, QListWidget,
+    QListWidgetItem, QAbstractItemView,
+)
 from PyQt6.QtCore import Qt, QObject, QSize
 from PyQt6.QtGui import QColor, QFont, QIcon, QPainter, QPixmap
 
 from ui.widgets import NavButton
 from ui.PlaybackTab import PlaybackTab
+from ui.PlaylistTab import PlaylistTab
 from ui.SettingsTab import SettingsTab
 from ui.TranslatorTab import TranslatorTab
 from ui.VisualizerTab import VisualizerTab
@@ -71,47 +74,53 @@ class MainWindowUI(QObject):
 
         self._is_collapsed = False
 
-        # ── Collapsed mini strip ───────────────────────────────────────
+        # ── Collapsed mini player ──────────────────────────────────────
         self._collapsed_strip = QFrame()
         self._collapsed_strip.setObjectName("collapsed_strip")
+        self._collapsed_strip.setSizePolicy(
+            QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding
+        )
         self._collapsed_strip.setVisible(False)
         cs_layout = QVBoxLayout(self._collapsed_strip)
-        cs_layout.setContentsMargins(12, 6, 12, 6)
-        cs_layout.setSpacing(4)
+        cs_layout.setContentsMargins(12, 8, 12, 8)
+        cs_layout.setSpacing(6)
 
-        # Row 1: filename
         self._collapsed_file_label = ElidingLabel("No file selected.")
         self._collapsed_file_label.setObjectName("file_path_label")
+        self._collapsed_file_label.setProperty("i18n_dynamic", True)
         cs_layout.addWidget(self._collapsed_file_label)
 
-        # Row 2: humanize checkbox
-        self._collapsed_humanize_check = QCheckBox("Humanize")
-        self._collapsed_humanize_check.setToolTip("Enable or disable all humanization at once")
-        cs_layout.addWidget(self._collapsed_humanize_check)
+        mode_row = QHBoxLayout()
+        mode_row.setSpacing(6)
+        self._collapsed_mode_label = QLabel("Playback Mode")
+        self._collapsed_mode_combo = QComboBox()
+        for value, text in PlaylistTab.MODES:
+            self._collapsed_mode_combo.addItem(text, value)
+        mode_row.addWidget(self._collapsed_mode_label)
+        mode_row.addWidget(self._collapsed_mode_combo, 1)
+        cs_layout.addLayout(mode_row)
 
-        # Row 3: load buttons (icons set in apply_theme)
-        self._collapsed_load_btn = QPushButton("")
-        self._collapsed_load_btn.setObjectName("cs_load_btn")
-        self._collapsed_load_btn.setIconSize(QSize(16, 16))
-        self._collapsed_load_btn.setToolTip("Open a MIDI file for playback")
-        self._collapsed_load_saved_btn = QPushButton("")
-        self._collapsed_load_saved_btn.setObjectName("cs_load_saved_btn")
-        self._collapsed_load_saved_btn.setIconSize(QSize(16, 16))
-        self._collapsed_load_saved_btn.setToolTip("Load a saved playback")
+        navigation_row = QHBoxLayout()
+        navigation_row.setSpacing(6)
+        self._collapsed_previous_btn = QPushButton("Previous")
+        self._collapsed_previous_btn.setToolTip("Play the previous playlist item")
+        self._collapsed_next_btn = QPushButton("Next")
+        self._collapsed_next_btn.setToolTip("Play the next playlist item")
+        navigation_row.addWidget(self._collapsed_previous_btn, 1)
+        navigation_row.addWidget(self._collapsed_next_btn, 1)
+        cs_layout.addLayout(navigation_row)
 
-        # Keep alive for signal wiring / _set_save_enabled — not shown in layout
-        self._collapsed_save_btn = QPushButton("\uE74E")
-        self._collapsed_save_btn.setObjectName("cs_save_btn")
-        self._collapsed_save_btn.setToolTip("Save the current playback")
-        self._collapsed_save_btn.setEnabled(False)
+        self._collapsed_playlist_label = QLabel("Playlist")
+        self._collapsed_playlist_label.setProperty("role", "section")
+        cs_layout.addWidget(self._collapsed_playlist_label)
+        self._collapsed_playlist_list = QListWidget()
+        self._collapsed_playlist_list.setObjectName("collapsed_playlist_list")
+        self._collapsed_playlist_list.setSelectionMode(
+            QAbstractItemView.SelectionMode.SingleSelection
+        )
+        self._collapsed_playlist_list.setMinimumHeight(135)
+        cs_layout.addWidget(self._collapsed_playlist_list, 1)
 
-        cs_row3 = QHBoxLayout()
-        cs_row3.setSpacing(5)
-        cs_row3.addWidget(self._collapsed_load_btn, 1)
-        cs_row3.addWidget(self._collapsed_load_saved_btn, 1)
-        cs_layout.addLayout(cs_row3)
-
-        # Rows 4-6 receive reparented transport widgets on collapse
         self._cs_scrubber_row = QWidget()
         self._cs_scrubber_layout = QVBoxLayout(self._cs_scrubber_row)
         self._cs_scrubber_layout.setContentsMargins(0, 0, 0, 0)
@@ -131,7 +140,7 @@ class MainWindowUI(QObject):
         cs_layout.addWidget(self._cs_expand_row)
 
         self._cs_layout = cs_layout
-        main_layout.addWidget(self._collapsed_strip)
+        main_layout.addWidget(self._collapsed_strip, 1)
 
         # ── Body: sidebar + page stack ─────────────────────────────────
         self._body = QWidget()
@@ -155,6 +164,7 @@ class MainWindowUI(QObject):
 
         _NAV_ITEMS = [
             ("\uE768", "Playback"),
+            ("\uE8D5", "Playlist"),
             ("\uE8D6", "Visualizer"),
             ("\uE8B1", "Translator"),
             ("\uE713", "Settings"),
@@ -175,6 +185,7 @@ class MainWindowUI(QObject):
 
         # ── Pages ──────────────────────────────────────────────────────
         self.playback_tab   = PlaybackTab()
+        self.playlist_tab   = PlaylistTab()
         self.visualizer_tab = VisualizerTab()
         self.translator_tab = TranslatorTab()
         self.settings_tab   = SettingsTab()
@@ -182,14 +193,17 @@ class MainWindowUI(QObject):
         self.license_tab    = LicenseTab()
 
         self.tabs.addWidget(self.playback_tab)    # 0
-        self.tabs.addWidget(self.visualizer_tab)  # 1
-        self.tabs.addWidget(self.translator_tab)  # 2
-        self.tabs.addWidget(self.settings_tab)    # 3
-        self.tabs.addWidget(self.debug_tab)       # 4
-        self.tabs.addWidget(self.license_tab)     # 5
+        self.tabs.addWidget(self.playlist_tab)    # 1
+        self.tabs.addWidget(self.visualizer_tab)  # 2
+        self.tabs.addWidget(self.translator_tab)  # 3
+        self.tabs.addWidget(self.settings_tab)    # 4
+        self.tabs.addWidget(self.debug_tab)       # 5
+        self.tabs.addWidget(self.license_tab)     # 6
 
         # ── Convenience aliases for frequently accessed sub-widgets ────
         self.log_output      = self.debug_tab.log_output
+        self.save_button     = self.playback_tab.save_button
+        self.reset_button    = self.playback_tab.reset_button
         self.timeline_widget = self.visualizer_tab.timeline_widget
         self.piano_widget    = self.visualizer_tab.piano_widget
         self.scroll_area     = self.visualizer_tab.scroll_area
@@ -217,34 +231,59 @@ class MainWindowUI(QObject):
 
         self.play_button = QPushButton("▶  Play")
         self.play_button.setObjectName("play_button")
+        self.play_button.setProperty("i18n_dynamic", True)
         self.play_button.setToolTip("Start, pause, or resume playback")
 
         self.stop_button = QPushButton("■  Stop")
         self.stop_button.setObjectName("stop_button")
+        self.stop_button.setProperty("i18n_dynamic", True)
         self.stop_button.setToolTip("Stop playback and reset to the beginning")
+
+        self._playback_info_widget = QWidget()
+        self._playback_info_widget.setObjectName("playback_info_widget")
+        self._playback_info_widget.setMinimumWidth(320)
+        playback_info_layout = QVBoxLayout(self._playback_info_widget)
+        playback_info_layout.setContentsMargins(4, 0, 4, 0)
+        playback_info_layout.setSpacing(1)
 
         self.time_label = QLabel("00:00 / 00:00")
         self.time_label.setObjectName("time_label")
+        self.time_label.setProperty("i18n_dynamic", True)
         self.time_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._time_display_current = 0.0
+        self._time_display_total = 0.0
+        self._countdown_remaining = 0
 
-        self.save_button = QPushButton("Save")
-        self.save_button.setObjectName("save_button")
-        self.save_button.setToolTip("Save the current humanized performance to a file for later replay")
+        self.now_playing_label = ElidingLabel("Now Playing: —")
+        self.now_playing_label.setObjectName("now_playing_label")
+        self.now_playing_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
-        self.reset_button = QPushButton("Reset")
-        self.reset_button.setObjectName("reset_button")
-        self.reset_button.setToolTip("Reset all settings to their default values")
+        self.playback_source_label = ElidingLabel("Source: —")
+        self.playback_source_label.setObjectName("playback_source_label")
+        self.playback_source_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+
+        playback_info_layout.addWidget(self.time_label)
+        playback_info_layout.addWidget(self.now_playing_label)
+        playback_info_layout.addWidget(self.playback_source_label)
 
         btn_row.addWidget(self.play_button)
         btn_row.addWidget(self.stop_button)
         btn_row.addStretch()
-        btn_row.addWidget(self.time_label)
+        btn_row.addWidget(self._playback_info_widget, 1)
         btn_row.addStretch()
-        btn_row.addWidget(self.save_button)
-        btn_row.addWidget(self.reset_button)
+
+        self.previous_button = QPushButton("Previous")
+        self.previous_button.setObjectName("previous_button")
+        self.previous_button.setToolTip("Play the previous playlist item")
+        self.next_button = QPushButton("Next")
+        self.next_button.setObjectName("next_button")
+        self.next_button.setToolTip("Play the next playlist item")
+        btn_row.addWidget(self.previous_button)
+        btn_row.addWidget(self.next_button)
 
         self.collapse_btn = QPushButton("▲  Collapse")
         self.collapse_btn.setObjectName("collapse_btn")
+        self.collapse_btn.setProperty("i18n_dynamic", True)
         self.collapse_btn.setToolTip("Collapse to mini mode")
         self.collapse_btn.clicked.connect(self._toggle_collapsed)
         btn_row.addWidget(self.collapse_btn)
@@ -257,6 +296,10 @@ class MainWindowUI(QObject):
         self.play_button.setEnabled(False)
         self.stop_button.setEnabled(False)
         self.save_button.setEnabled(False)
+        self.previous_button.setEnabled(False)
+        self.next_button.setEnabled(False)
+        self._collapsed_previous_btn.setEnabled(False)
+        self._collapsed_next_btn.setEnabled(False)
         self.scrubber_slider.setEnabled(False)
 
         # ── Cross-cutting connections ──────────────────────────────────
@@ -265,9 +308,17 @@ class MainWindowUI(QObject):
         self.settings_tab.theme_combo.currentTextChanged.connect(self.apply_theme)
         self.settings_tab.theme_customize_btn.clicked.connect(self._open_theme_dialog)
 
-        self._collapsed_humanize_check.toggled.connect(self._on_collapsed_humanize_toggled)
-        self.playback_tab.select_all_humanization_check.toggled.connect(
-            self._sync_collapsed_humanize
+        self._collapsed_mode_combo.currentIndexChanged.connect(
+            self._on_collapsed_mode_changed
+        )
+        self.playlist_tab.mode_combo.currentIndexChanged.connect(
+            self._sync_collapsed_mode
+        )
+        self._collapsed_playlist_list.currentItemChanged.connect(
+            self._on_collapsed_playlist_selection_changed
+        )
+        self._collapsed_playlist_list.itemDoubleClicked.connect(
+            self._on_collapsed_playlist_activated
         )
 
         self._switch_page(0)
@@ -291,12 +342,6 @@ class MainWindowUI(QObject):
             return
         ThemeManager.set_active_name(name)
         self.main_window.setStyleSheet(generate_stylesheet(theme))
-        _c = QColor(theme.text_primary)
-        _px = self._collapsed_load_btn.fontMetrics().height()
-        self._collapsed_load_btn.setIconSize(QSize(_px, _px))
-        self._collapsed_load_btn.setIcon(_make_mdl2_icon("\uE8D6", _c, _px))
-        self._collapsed_load_saved_btn.setIconSize(QSize(_px, _px))
-        self._collapsed_load_saved_btn.setIcon(_make_mdl2_icon("\uEC50", _c, _px))
         self.timeline_widget.left_hand_color.setNamedColor(theme.accent)
         self.timeline_widget.left_hand_color.setAlpha(210)
         self.timeline_widget.right_hand_color.setNamedColor(theme.accent_play)
@@ -335,8 +380,8 @@ class MainWindowUI(QObject):
     def _update_visualizer_availability(self) -> None:
         both_off = (not self.settings_tab.timeline_vis_check.isChecked() and
                     not self.settings_tab.piano_vis_check.isChecked())
-        self._nav_btns[1].setEnabled(not both_off)
-        if both_off and self.tabs.currentIndex() == 1:
+        self._nav_btns[2].setEnabled(not both_off)
+        if both_off and self.tabs.currentIndex() == 2:
             self._switch_page(0)
 
     def update_progress(self, current_time, total_duration):
@@ -366,7 +411,21 @@ class MainWindowUI(QObject):
         def fmt(s):
             m, sec = int(s // 60), int(s % 60)
             return f"{m:02d}:{sec:02d}"
-        self.time_label.setText(f"{fmt(current)} / {fmt(total)}")
+
+        self._time_display_current = max(0.0, float(current or 0.0))
+        self._time_display_total = max(0.0, float(total or 0.0))
+        text = f"{fmt(self._time_display_current)} / {fmt(self._time_display_total)}"
+        if self._countdown_remaining > 0:
+            suffix = self.main_window._t("Countdown {seconds} seconds").format(
+                seconds=self._countdown_remaining
+            )
+            text += f" ({suffix})"
+        self.time_label.setText(text)
+
+    def set_countdown_remaining(self, seconds: int) -> None:
+        """Show or clear the pre-playback countdown beside the time display."""
+        self._countdown_remaining = max(0, int(seconds))
+        self.update_time_label(self._time_display_current, self._time_display_total)
 
     # ── Scrubber ───────────────────────────────────────────────────────
 
@@ -390,18 +449,20 @@ class MainWindowUI(QObject):
         self._is_collapsed = not self._is_collapsed
         if self._is_collapsed:
             self._expanded_size = self.main_window.size()
+            self._expanded_minimum_size = self.main_window.minimumSize()
             self._body.setVisible(False)
             self._collapsed_strip.setVisible(True)
-            self.collapse_btn.setText("▼  Expand")
-            self.collapse_btn.setToolTip("Restore full window")
+            self.collapse_btn.setText(self.main_window._t("▼  Expand"))
+            self.collapse_btn.setToolTip(self.main_window._t("Restore full window"))
             self.collapse_btn.setMinimumWidth(0)
             self.collapse_btn.setMaximumWidth(16777215)
             self.collapse_btn.setProperty("strip_mode", True)
             self.collapse_btn.style().unpolish(self.collapse_btn)
             self.collapse_btn.style().polish(self.collapse_btn)
-            # Row 4: scrubber then time label stacked vertically
+            # Row 4: scrubber followed by time, current song, and source.
             self._cs_scrubber_layout.addWidget(self.scrubber_slider)
-            self._cs_scrubber_layout.addWidget(self.time_label)
+            self._playback_info_widget.setMinimumWidth(0)
+            self._cs_scrubber_layout.addWidget(self._playback_info_widget)
             # Row 5: play + stop equal width
             self._cs_playback_layout.addWidget(self.play_button, 1)
             self._cs_playback_layout.addWidget(self.stop_button, 1)
@@ -417,18 +478,14 @@ class MainWindowUI(QObject):
                 btn.setProperty("icon_mode", True)
                 btn.style().unpolish(btn)
                 btn.style().polish(btn)
-            self.save_button.setVisible(False)
-            self.reset_button.setVisible(False)
             self._transport_bar.setVisible(False)
-            self.main_window.setMinimumWidth(0)
-            self.main_window.setMinimumHeight(0)
-            self.main_window.adjustSize()
-            self.main_window.resize(250, 250)
+            self.main_window.setMinimumSize(340, 430)
+            self.main_window.resize(380, 500)
         else:
             self._body.setVisible(True)
             self._collapsed_strip.setVisible(False)
-            self.collapse_btn.setText("▲  Collapse")
-            self.collapse_btn.setToolTip("Collapse to mini mode")
+            self.collapse_btn.setText(self.main_window._t("▲  Collapse"))
+            self.collapse_btn.setToolTip(self.main_window._t("Collapse to mini mode"))
             self.collapse_btn.setProperty("strip_mode", False)
             self.collapse_btn.style().unpolish(self.collapse_btn)
             self.collapse_btn.style().polish(self.collapse_btn)
@@ -437,7 +494,8 @@ class MainWindowUI(QObject):
             btn_row_layout = self._btn_row_widget.layout()
             btn_row_layout.insertWidget(0, self.play_button)
             btn_row_layout.insertWidget(1, self.stop_button)
-            btn_row_layout.insertWidget(3, self.time_label)
+            self._playback_info_widget.setMinimumWidth(320)
+            btn_row_layout.insertWidget(3, self._playback_info_widget, 1)
             btn_row_layout.addWidget(self.collapse_btn)
             for btn in (self.play_button, self.stop_button):
                 btn.setMinimumWidth(0)
@@ -445,36 +503,124 @@ class MainWindowUI(QObject):
                 btn.setProperty("icon_mode", False)
                 btn.style().unpolish(btn)
                 btn.style().polish(btn)
-            self.stop_button.setText("■  Stop")
-            self.save_button.setVisible(True)
-            self.save_button.setText("Save")
-            self.reset_button.setVisible(True)
-            self.reset_button.setText("Reset")
+            self.stop_button.setText(self.main_window._t("■  Stop"))
             self._transport_bar.setVisible(True)
             # play_button text restored by _sync_play_button (connected to collapse_btn.clicked)
-            self.main_window.setMinimumWidth(820)
-            self.main_window.setMinimumHeight(485)
+            self.main_window.setMinimumSize(self._expanded_minimum_size)
             self.main_window.resize(self._expanded_size)
 
-    # ── Collapsed-strip humanize sync ──────────────────────────────────
+    # ── Collapsed player synchronization ──────────────────────────────
 
-    def _on_collapsed_humanize_toggled(self, checked: bool) -> None:
-        sel = self.playback_tab.select_all_humanization_check
-        sel.blockSignals(True)
-        sel.setChecked(checked)
-        sel.blockSignals(False)
-        self.playback_tab._toggle_all(checked)
+    def _on_collapsed_mode_changed(self, _index: int) -> None:
+        mode = str(self._collapsed_mode_combo.currentData() or "single")
+        self.playlist_tab.set_mode(mode)
 
-    def _sync_collapsed_humanize(self, checked: bool) -> None:
-        self._collapsed_humanize_check.blockSignals(True)
-        self._collapsed_humanize_check.setChecked(checked)
-        self._collapsed_humanize_check.blockSignals(False)
+    def _sync_collapsed_mode(self, *_args) -> None:
+        mode = self.playlist_tab.current_mode()
+        self._collapsed_mode_combo.blockSignals(True)
+        self._collapsed_mode_combo.setCurrentIndex(
+            max(0, self._collapsed_mode_combo.findData(mode))
+        )
+        self._collapsed_mode_combo.blockSignals(False)
+
+    def _on_collapsed_playlist_selection_changed(self, current, _previous) -> None:
+        if current is None:
+            return
+        item_id = current.data(Qt.ItemDataRole.UserRole)
+        if item_id:
+            self.playlist_tab.select_id(str(item_id))
+
+    def _on_collapsed_playlist_activated(self, item) -> None:
+        item_id = item.data(Qt.ItemDataRole.UserRole) if item is not None else None
+        if item_id:
+            self.playlist_tab.play_requested.emit(str(item_id))
+
+    def collapsed_selected_playlist_id(self) -> str | None:
+        item = self._collapsed_playlist_list.currentItem()
+        if item is None:
+            return None
+        item_id = item.data(Qt.ItemDataRole.UserRole)
+        return str(item_id) if item_id else None
+
+    def refresh_collapsed_playlist(
+        self, items: list[dict], selected_id: str | None = None
+    ) -> None:
+        current_id = selected_id
+        if not current_id:
+            current = self._collapsed_playlist_list.currentItem()
+            if current is not None:
+                current_id = str(current.data(Qt.ItemDataRole.UserRole) or "")
+        self._collapsed_playlist_list.blockSignals(True)
+        self._collapsed_playlist_list.clear()
+        selected_item = None
+        for data in items:
+            item = QListWidgetItem(str(data.get("name") or ""))
+            item.setData(Qt.ItemDataRole.UserRole, str(data.get("id") or ""))
+            source_type = str(data.get("source_type") or "midi")
+            item.setToolTip(
+                self.main_window._t("Text Sheet")
+                if source_type == "sheet"
+                else str(data.get("source_label") or data.get("source_midi_filename") or "")
+            )
+            self._collapsed_playlist_list.addItem(item)
+            if current_id and str(data.get("id")) == current_id:
+                selected_item = item
+        if selected_item is not None:
+            self._collapsed_playlist_list.setCurrentItem(selected_item)
+            self._collapsed_playlist_list.scrollToItem(selected_item)
+        elif self._collapsed_playlist_list.count() > 0:
+            self._collapsed_playlist_list.setCurrentRow(0)
+        self._collapsed_playlist_list.blockSignals(False)
+        has_items = self._collapsed_playlist_list.count() > 0
+        self._collapsed_previous_btn.setEnabled(has_items)
+        self._collapsed_next_btn.setEnabled(has_items)
+        self.previous_button.setEnabled(has_items)
+        self.next_button.setEnabled(has_items)
+
+    def apply_language(self, language_manager) -> None:
+        language_manager.translate_widget_tree(self.main_window)
+        self.playback_tab.retranslate_combo_items(language_manager.tr)
+        self.playlist_tab.retranslate_mode_items(language_manager.tr)
+        self.settings_tab.retranslate_language_items(language_manager)
+        self.settings_tab.update_global_humanization_summary(language_manager.tr)
+        self.translator_tab.retranslate(language_manager)
+        self.license_tab.retranslate_combo_items(language_manager.tr)
+        current_mode = self.playlist_tab.current_mode()
+        self._collapsed_mode_combo.blockSignals(True)
+        self._collapsed_mode_combo.clear()
+        for value, text in PlaylistTab.MODES:
+            self._collapsed_mode_combo.addItem(language_manager.tr(text), value)
+        self._collapsed_mode_combo.setCurrentIndex(
+            max(0, self._collapsed_mode_combo.findData(current_mode))
+        )
+        self._collapsed_mode_combo.blockSignals(False)
+        self._collapsed_mode_label.setText(language_manager.tr("Playback Mode"))
+        self._collapsed_playlist_label.setText(language_manager.tr("Playlist"))
+        self._collapsed_previous_btn.setText(language_manager.tr("Previous"))
+        self._collapsed_next_btn.setText(language_manager.tr("Next"))
+        self.previous_button.setText(language_manager.tr("Previous"))
+        self.next_button.setText(language_manager.tr("Next"))
+
+        # Transport labels are stateful and may have changed after the original
+        # English strings were cached by the generic translator.
+        if not self._is_collapsed:
+            self.stop_button.setText(language_manager.tr("■  Stop"))
+            self.save_button.setText(language_manager.tr("Save Playback"))
+            self.reset_button.setText(language_manager.tr("Reset"))
+            self.collapse_btn.setText(language_manager.tr("▲  Collapse"))
+        self.update_time_label(self._time_display_current, self._time_display_total)
 
     # ── Public API ─────────────────────────────────────────────────────
 
     def update_file_label(self, text: str, tooltip: str = "") -> None:
         self.playback_tab.update_file_label(text, tooltip)
         self._collapsed_file_label.setText(text)
+
+    def update_playback_info(self, title_text: str, source_text: str) -> None:
+        self.now_playing_label.setText(title_text)
+        self.now_playing_label.setToolTip(title_text)
+        self.playback_source_label.setText(source_text)
+        self.playback_source_label.setToolTip(source_text)
 
     def set_controls_enabled(self, enabled: bool, ignore_if_loaded: bool = False) -> None:
         self.playback_tab.set_groups_enabled(
@@ -484,22 +630,32 @@ class MainWindowUI(QObject):
 
     def _set_save_enabled(self, val: bool) -> None:
         self.save_button.setEnabled(val)
-        self._collapsed_save_btn.setEnabled(val)
 
     def reset_controls_to_default(self) -> None:
         self.playback_tab.reset_to_default()
+        self.settings_tab.use_ai_pedal_check.setChecked(False)
 
     def load_config_to_ui(self, config: dict, save_dir: str) -> None:
-        self.playback_tab.load_config(config)
         self.settings_tab.load_config(config, save_dir)
+        self.playback_tab.set_global_humanization_config(
+            self.settings_tab.global_humanization_config()
+        )
+        self.playback_tab.load_config(config)
 
     def gather_playback_config(self) -> dict:
+        self.playback_tab.set_global_humanization_config(
+            self.settings_tab.global_humanization_config()
+        )
         cfg = self.playback_tab.gather_playback_config()
-        cfg['use_ai_pedal'] = False  # AI pedal is driven by pedal_style='ai', not this flag
+        cfg['use_ai_pedal'] = self.settings_tab.use_ai_pedal_check.isChecked()
         return cfg
 
     def gather_app_config(self) -> dict:
-        return {**self.playback_tab.gather_app_config(), **self.settings_tab.gather_config()}
+        return {
+            **self.playback_tab.gather_app_config(),
+            **self.settings_tab.gather_config(),
+            "playlist_mode": self.playlist_tab.current_mode(),
+        }
 
     def update_enabled_states(self) -> None:
         self.playback_tab.update_enabled_states()

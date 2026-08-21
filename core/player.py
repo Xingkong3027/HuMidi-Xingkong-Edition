@@ -12,6 +12,12 @@ from typing import List, Dict, Optional, Tuple
 from core.models import Note, KeyEvent, MusicalSection, KeyState
 from core.core import TempoMap, KeyMapper
 from core.humanizer import Humanizer
+from core.performance import (
+    PlaybackPerformanceSession,
+    build_press_action_plan,
+    config_bool,
+    unique_press_specs,
+)
 import core.pedal_generator as pedal_generator
 
 class Player(QObject):
@@ -22,6 +28,8 @@ class Player(QObject):
     pedal_updated = Signal(bool)
     auto_paused = Signal()
     error_occurred = Signal(str)
+    compiled_bundle_ready = Signal(object)
+    countdown_updated = Signal(int)
 
     def __init__(self, config: Dict, notes: List[Note], sections: List[MusicalSection], tempo_map: TempoMap):
         super().__init__()
@@ -33,6 +41,7 @@ class Player(QObject):
         self.mapper = KeyMapper(use_88_key_layout=self.config.get('use_88_key_layout', False))
         
         self.compiled_events: List[KeyEvent] = []
+        self.visualization_notes: List[Note] = []
         self.event_index = 0
 
         self.stop_event = threading.Event()
@@ -44,6 +53,7 @@ class Player(QObject):
         # Running key-net state for O(1) resume sync (maintained by _execute_chord_event)
         self._key_net: Dict[str, int] = {}
         self._key_last_press: Dict[str, KeyEvent] = {}
+        self._pitch_net: Dict[int, int] = {}
         self._pedal_net_down = False
         
         self.start_time = 0.0
@@ -52,10 +62,26 @@ class Player(QObject):
         self.total_duration = 0.0
         
         self.last_progress_emit_time = 0.0
-        self.progress_update_interval = 1.0 / 60.0
+        # Parse persisted values strictly. In particular, the string 'false'
+        # must not accidentally enable the optimized path.
+        self.performance_optimization = config_bool(
+            self.config.get('performance_optimization', False)
+        )
+        self.progress_update_interval = (
+            1.0 / 30.0 if self.performance_optimization else 1.0 / 60.0
+        )
+        self._visualizer_update_interval = (
+            1.0 / 30.0 if self.performance_optimization else 0.0
+        )
+        self._last_visualizer_emit_time = 0.0
+        self._performance_session = PlaybackPerformanceSession(
+            self.performance_optimization
+        )
         
         self.debug_log: Optional[List[str]] = [] if self.config.get('debug_mode') else None
         self.current_section_idx = -1
+        seed = self.config.get('humanization_seed')
+        self.rng = random.Random(seed if seed not in (None, '') else None)
     
     def _log_debug(self, msg: str):
         if self.debug_log is not None: 
@@ -64,7 +90,7 @@ class Player(QObject):
 
     def _apply_humanization_and_compile(self):
         self._log_debug("\n=== HUMANIZATION PIPELINE ===")
-        self.humanizer = Humanizer(self.config, self.debug_log)
+        self.humanizer = Humanizer(self.config, self.debug_log, self.rng)
         humanized_notes = copy.deepcopy(self.notes)
         left_hand_notes = [n for n in humanized_notes if n.hand == 'left']
         right_hand_notes = [n for n in humanized_notes if n.hand == 'right']
@@ -101,6 +127,28 @@ class Player(QObject):
         self._apply_humanization_and_compile()
         return self.compiled_events
 
+    def export_compiled_bundle(self) -> Dict:
+        """Compile once and return both execution and visualization data.
+
+        The old save/playlist path only serialized physical key events and later
+        attempted to rebuild notes from those events. That reconstruction loses
+        information for overlapping notes of the same pitch and makes saved
+        playback look different from the preview. Keeping the exact compiled
+        notes alongside the events makes preview, save, and playlist rendering
+        deterministic and identical.
+        """
+        self.status_updated.emit("Compiling playback events for saving...")
+        self._apply_humanization_and_compile()
+        return self.get_compiled_bundle()
+
+    def get_compiled_bundle(self) -> Dict:
+        return {
+            'compiled_events': list(self.compiled_events),
+            'visualization_notes': copy.deepcopy(self.visualization_notes),
+            'total_duration': float(self.total_duration),
+            'tempo_map': self.tempo_map,
+        }
+
     def load_compiled_events(self, events: List[KeyEvent], total_duration: float):
         """Load pre-compiled events for saved playback, bypassing the compilation pipeline.
 
@@ -125,12 +173,22 @@ class Player(QObject):
         self._execute_playback()
 
     def play(self):
-        self.status_updated.emit("Initiating playback sequence...")
-        self._log_debug("\n=== STARTING PLAYBACK PROCESS ===")
-        self.status_updated.emit("Compiling playback events...")
-        self._apply_humanization_and_compile()
-        self.status_updated.emit("Playing!")
-        self._execute_playback()
+        try:
+            self.status_updated.emit("Initiating playback sequence...")
+            self._log_debug("\n=== STARTING PLAYBACK PROCESS ===")
+            self.status_updated.emit("Compiling playback events...")
+            self._apply_humanization_and_compile()
+            self.compiled_bundle_ready.emit(self.get_compiled_bundle())
+            self.status_updated.emit("Playing!")
+            self._execute_playback()
+        except Exception as e:
+            # Compilation happens before _execute_playback() takes ownership of
+            # cleanup. Surface failures and always terminate the worker thread.
+            error_msg = f"Playback Preparation Error:\n{str(e)}\n\nTraceback:\n{traceback.format_exc()}"
+            self.error_occurred.emit(error_msg)
+            self.stop_event.set()
+            self.shutdown()
+            self.playback_finished.emit()
 
     def _execute_playback(self):
         """Shared playback execution: countdown → cursor loop → cleanup.
@@ -145,10 +203,17 @@ class Player(QObject):
                 self.playback_finished.emit()
                 return
 
+            self._performance_session.start()
+            if self.performance_optimization:
+                self.status_updated.emit(
+                    "Performance optimization enabled (Roblox-compatible input path)."
+                )
+
             self.start_time = time.perf_counter()
             self.total_paused_time = 0.0
             self.event_index = 0
             self.last_progress_emit_time = self.start_time
+            self._last_visualizer_emit_time = 0.0
 
             self._run_cursor_loop()
 
@@ -157,6 +222,7 @@ class Player(QObject):
             self.error_occurred.emit(error_msg)
             self.stop_event.set()
         finally:
+            self._performance_session.stop()
             if self.stop_event.is_set():
                 self.shutdown()
                 self.playback_finished.emit()
@@ -195,6 +261,7 @@ class Player(QObject):
         self.event_index = new_idx
         self._key_net.clear()
         self._key_last_press.clear()
+        self._pitch_net.clear()
         self._pedal_net_down = False
 
         now = time.perf_counter()
@@ -214,14 +281,29 @@ class Player(QObject):
         )
 
     def _run_countdown(self):
+        """Run the pre-playback countdown and expose it to the main time display.
+
+        The original implementation only wrote the countdown to the debug log,
+        which made a non-debug build appear frozen.  A dedicated signal keeps
+        the transport time label updated without coupling the player thread to
+        UI widgets.  Emitting 0 always clears the suffix when playback starts,
+        is stopped, or the countdown exits early.
+        """
         self.status_updated.emit("Get ready...")
-        for i in range(3, 0, -1):
-            if self.stop_event.is_set(): return
-            self.status_updated.emit(f"{i}...")
-            time.sleep(1)
+        seconds = max(1, min(60, int(self.config.get("countdown_seconds", 3))))
+        try:
+            for i in range(seconds, 0, -1):
+                if self.stop_event.is_set():
+                    return
+                self.countdown_updated.emit(i)
+                self.status_updated.emit(f"{i}...")
+                time.sleep(1)
+        finally:
+            self.countdown_updated.emit(0)
 
     def _compile_event_list(self, notes_to_play: List[Note], sections: List[MusicalSection]):
         self.key_states.clear()
+        self.visualization_notes = []
         use_mistakes   = self.config.get('enable_mistakes', False)
         mistake_chance = self.config.get('mistake_chance', 0) / 100.0
         temp_heap      = []
@@ -233,7 +315,8 @@ class Player(QObject):
 
         for note in notes_to_play:
             scheduled = False
-            if use_mistakes and random.random() < mistake_chance:
+            scheduled_pitch = note.pitch
+            if use_mistakes and self.rng.random() < mistake_chance:
                 mistake_pitch = self._get_mistake_pitch(note.pitch)
                 if mistake_pitch:
                     key_data = self.mapper.get_key_data(mistake_pitch)
@@ -241,7 +324,10 @@ class Player(QObject):
                         mk_char = key_data['key']
                         heapq.heappush(temp_heap, KeyEvent(note.start_time, 2, 'press', mk_char, pitch=mistake_pitch))
                         heapq.heappush(temp_heap, KeyEvent(note.start_time + note.duration, 4, 'release', mk_char, pitch=mistake_pitch))
+                        if mk_char not in self.key_states:
+                            self.key_states[mk_char] = KeyState(mk_char)
                         scheduled = True
+                        scheduled_pitch = mistake_pitch
                         mistakes_injected += 1
 
             if not scheduled:
@@ -252,8 +338,18 @@ class Player(QObject):
                     heapq.heappush(temp_heap, KeyEvent(note.end_time, 4, 'release', key_char, pitch=note.pitch))
                     if key_char not in self.key_states:
                         self.key_states[key_char] = KeyState(key_char)
+                    scheduled = True
                 else:
                     notes_unmapped += 1
+
+            if scheduled:
+                visual_note = copy.deepcopy(note)
+                visual_note.pitch = scheduled_pitch
+                # Keep the exact humanized timing that produced the physical
+                # press/release pair, including mistakes and articulation.
+                visual_note.start_time = float(note.start_time)
+                visual_note.duration = max(0.01, float(note.duration))
+                self.visualization_notes.append(visual_note)
 
         self._log_debug(f"[COMPILE] Pedal style: {self.config.get('pedal_style', 'none')}")
         for event in pedal_generator.generate_events(self.config, notes_to_play, sections, self._log_debug):
@@ -263,6 +359,7 @@ class Player(QObject):
             self.compiled_events.append(heapq.heappop(temp_heap))
 
         self.total_duration = self.compiled_events[-1].time if self.compiled_events else 0.0
+        self.visualization_notes.sort(key=lambda n: (n.start_time, n.pitch, n.id))
 
         # Compilation summary
         press_count = sum(1 for e in self.compiled_events if e.action == 'press')
@@ -292,10 +389,10 @@ class Player(QObject):
         if KeyMapper.is_black_key(original_pitch):
             black_pool = [p for p in candidates if KeyMapper.is_black_key(p)]
             white_pool = [p for p in candidates if not KeyMapper.is_black_key(p)]
-            pool = (black_pool if random.random() < 0.5 else white_pool) or black_pool or white_pool
-            return random.choice(pool) if pool else None
+            pool = (black_pool if self.rng.random() < 0.5 else white_pool) or black_pool or white_pool
+            return self.rng.choice(pool) if pool else None
         valid = [p for p in candidates if not KeyMapper.is_black_key(p)]
-        return random.choice(valid) if valid else None
+        return self.rng.choice(valid) if valid else None
 
     def _run_cursor_loop(self):
         self._log_debug("\n=== ENTERING CURSOR LOOP ===")
@@ -303,19 +400,24 @@ class Player(QObject):
         _was_paused = False
         self._key_net.clear()
         self._key_last_press.clear()
+        self._pitch_net.clear()
         self._pedal_net_down = False
 
         while not self.stop_event.is_set():
             if self.pause_event.is_set():
                 if not _was_paused:
-                    # First pause iteration: safe to release now — cursor loop owns all key presses
+                    # First pause iteration: safe to release now — cursor loop owns all key presses.
+                    # Also release the temporary timer/priority/GC tuning until playback resumes.
                     self.shutdown()
+                    self._performance_session.stop()
                     _was_paused = True
                 time.sleep(0.05)
                 continue
 
             if _was_paused:
-                # Just unpaused — re-press any notes that were mid-play at the pause point
+                # Just unpaused — restore performance tuning and re-press any notes
+                # that were mid-play at the pause point.
+                self._performance_session.start()
                 self._sync_active_keys_at_resume()
                 _was_paused = False
 
@@ -355,8 +457,15 @@ class Player(QObject):
                     else:
                         break
 
-                batch.sort(key=lambda x: x.priority)
-                self._execute_chord_event(batch, playback_time)
+                if self.performance_optimization:
+                    # Keep original timestamps ordered. If the playback thread is
+                    # catching up after a late wake-up, separate musical attacks
+                    # must not be collapsed merely because they are overdue together.
+                    batch.sort(key=lambda x: (x.time, x.priority))
+                    self._execute_chord_event_optimized(batch, playback_time)
+                else:
+                    batch.sort(key=lambda x: x.priority)
+                    self._execute_chord_event(batch, playback_time)
             else:
                 sleep_time = min(next_event.time - playback_time - 0.001, self.progress_update_interval)
                 time.sleep(max(0.0005, sleep_time))
@@ -396,7 +505,13 @@ class Player(QObject):
             self._key_net[event.key_char] = self._key_net.get(event.key_char, 0) - 1
             net = self._key_net.get(event.key_char, 0)
             if event.pitch is not None:
-                self.active_pitches.discard(event.pitch)
+                pitch_net = self._pitch_net.get(event.pitch, 0) - 1
+                if pitch_net <= 0:
+                    self._pitch_net.pop(event.pitch, None)
+                    self.active_pitches.discard(event.pitch)
+                else:
+                    self._pitch_net[event.pitch] = pitch_net
+                    self.active_pitches.add(event.pitch)
                 state_changed = True
 
             key_char = event.key_char
@@ -420,6 +535,7 @@ class Player(QObject):
             self._key_net[event.key_char] = self._key_net.get(event.key_char, 0) + 1
             self._key_last_press[event.key_char] = event
             if event.pitch is not None:
+                self._pitch_net[event.pitch] = self._pitch_net.get(event.pitch, 0) + 1
                 self.active_pitches.add(event.pitch)
                 state_changed = True
 
@@ -448,6 +564,178 @@ class Player(QObject):
         if state_changed:
             self.visualizer_updated.emit(list(self.active_pitches))
 
+    @staticmethod
+    def _modifier_token(modifier: Key) -> str:
+        name = str(modifier).replace("Key.", "").lower()
+        if name.startswith("shift"):
+            return "shift"
+        if name.startswith("ctrl"):
+            return "ctrl"
+        if name.startswith("alt"):
+            return "alt"
+        return name
+
+    @staticmethod
+    def _pynput_key_for_token(token: str):
+        mapping = {
+            "shift": Key.shift,
+            "ctrl": Key.ctrl,
+            "alt": Key.alt,
+            "space": Key.space,
+        }
+        return mapping.get(str(token).lower(), token)
+
+    def _send_optimized_actions(self, actions: List[Tuple[str, str]]) -> None:
+        """Send an optimized action plan through the original pynput backend.
+
+        Roblox accepts the pynput path used by HuMidi's legacy player, while a
+        hand-written virtual-key-only SendInput batch can be ignored by the game.
+        Performance mode therefore optimizes event planning and duplicate
+        handling, but intentionally keeps the same physical injection backend as
+        normal playback.
+        """
+        for action, token in actions:
+            key = self._pynput_key_for_token(token)
+            try:
+                if action == "down":
+                    self.keyboard.press(key)
+                else:
+                    self.keyboard.release(key)
+            except Exception as exc:
+                self._log_debug(
+                    f"[PERF] {action.upper()} '{token}' failed: {exc}"
+                )
+
+    def _emit_optimized_visualizer_state(self, state_changed: bool) -> None:
+        if not state_changed:
+            return
+        now = time.perf_counter()
+        if (not self.active_pitches
+                or now - self._last_visualizer_emit_time
+                >= self._visualizer_update_interval):
+            self.visualizer_updated.emit(list(self.active_pitches))
+            self._last_visualizer_emit_time = now
+
+    def _execute_chord_event_optimized(
+        self, events: List[KeyEvent], playback_time: float
+    ) -> None:
+        """Execute a dense timestamp with fewer blocking input calls.
+
+        Logical note/reference counts are still updated for every original MIDI
+        event. Only physically identical attacks at the same timestamp are
+        collapsed, because a real keyboard cannot express several identical
+        key-downs at exactly the same instant. Different modifier variants are
+        retained as rapid re-strikes through the original pynput backend.
+        """
+        if self.stop_event.is_set():
+            return
+
+        # The cursor can hand us several different timestamps at once when it
+        # wakes up late. Optimize each timestamp independently so repeated
+        # attacks a few milliseconds apart are preserved rather than deduplicated.
+        distinct_times = {float(event.time) for event in events}
+        if len(distinct_times) > 1:
+            current_time = None
+            timestamp_group: List[KeyEvent] = []
+            for event in sorted(events, key=lambda item: (item.time, item.priority)):
+                event_time = float(event.time)
+                if current_time is None or event_time == current_time:
+                    current_time = event_time
+                    timestamp_group.append(event)
+                    continue
+                self._execute_chord_event_optimized(timestamp_group, playback_time)
+                current_time = event_time
+                timestamp_group = [event]
+            if timestamp_group:
+                self._execute_chord_event_optimized(timestamp_group, playback_time)
+            return
+
+        press_events = [event for event in events if event.action == "press"]
+        release_events = [event for event in events if event.action == "release"]
+        pedal_events = [event for event in events if event.action == "pedal"]
+        actions: List[Tuple[str, str]] = []
+        state_changed = False
+
+        # Match the legacy ordering: pedal changes, releases, then presses.
+        for event in pedal_events:
+            new_state = event.key_char == "down"
+            if new_state and not self.pedal_is_down:
+                self.pedal_is_down = True
+                actions.append(("down", "space"))
+            elif not new_state and self.pedal_is_down:
+                self.pedal_is_down = False
+                actions.append(("up", "space"))
+
+            if new_state != self._pedal_net_down:
+                self._pedal_net_down = new_state
+                self.pedal_updated.emit(new_state)
+            else:
+                self._pedal_net_down = new_state
+
+        released_bases: set[str] = set()
+        for event in release_events:
+            self._key_net[event.key_char] = self._key_net.get(event.key_char, 0) - 1
+            net = self._key_net.get(event.key_char, 0)
+            if event.pitch is not None:
+                pitch_net = self._pitch_net.get(event.pitch, 0) - 1
+                if pitch_net <= 0:
+                    self._pitch_net.pop(event.pitch, None)
+                    self.active_pitches.discard(event.pitch)
+                else:
+                    self._pitch_net[event.pitch] = pitch_net
+                    self.active_pitches.add(event.pitch)
+                state_changed = True
+
+            state = self.key_states.get(event.key_char)
+            if state is None or net > 0 or not state.is_physically_down:
+                continue
+            _modifiers, base_key = self._get_press_info_from_event(event)
+            if base_key not in released_bases:
+                actions.append(("up", base_key))
+                released_bases.add(base_key)
+            state.release()
+
+        press_specs: List[Tuple[str, Tuple[str, ...]]] = []
+        base_to_state_keys: Dict[str, set[str]] = {}
+        initially_down: set[str] = set()
+        for event in press_events:
+            self._key_net[event.key_char] = self._key_net.get(event.key_char, 0) + 1
+            self._key_last_press[event.key_char] = event
+            if event.pitch is not None:
+                self._pitch_net[event.pitch] = self._pitch_net.get(event.pitch, 0) + 1
+                self.active_pitches.add(event.pitch)
+                state_changed = True
+
+            state = self.key_states.get(event.key_char)
+            if state is None or event.pitch is None:
+                continue
+            modifiers, base_key = self._get_press_info_from_event(event)
+            if state.is_physically_down:
+                initially_down.add(base_key)
+            modifier_tokens = tuple(self._modifier_token(item) for item in modifiers)
+            press_specs.append((base_key, modifier_tokens))
+            base_to_state_keys.setdefault(base_key, set()).add(event.key_char)
+
+        unique_specs = unique_press_specs(press_specs)
+        actions.extend(build_press_action_plan(unique_specs, initially_down))
+        for base_key in {base for base, _mods in unique_specs}:
+            for state_key in base_to_state_keys.get(base_key, ()):
+                state = self.key_states.get(state_key)
+                if state is not None:
+                    state.press()
+
+        self._send_optimized_actions(actions)
+        self._emit_optimized_visualizer_state(state_changed)
+
+        if self.debug_log is not None and (press_events or release_events):
+            collapsed = max(0, len(press_specs) - len(unique_specs))
+            self._log_debug(
+                f"[PERF] {playback_time:.4f}s | logical="
+                f"{len(press_events)} press/{len(release_events)} release | "
+                f"physical_attacks={len(unique_specs)} | collapsed={collapsed} | "
+                "input_backend=pynput"
+            )
+
     def _handle_pedal_event(self, event: KeyEvent):
         if self.stop_event.is_set(): return
         if event.key_char == 'down' and not self.pedal_is_down:
@@ -469,15 +757,12 @@ class Player(QObject):
         Uses the running _key_net / _key_last_press counters maintained by
         _execute_chord_event — O(currently-held keys) instead of O(all events).
         """
-        pitch_net: Dict[int, int] = {}
         keys_repressed = []
         for key_char, count in self._key_net.items():
             if count > 0 and key_char in self.key_states:
                 press_event = self._key_last_press.get(key_char)
                 if press_event is None:
                     continue
-                if press_event.pitch is not None:
-                    pitch_net[press_event.pitch] = pitch_net.get(press_event.pitch, 0) + 1
                 modifiers, base_key = self._get_press_info_from_event(press_event)
                 self.key_states[key_char].press()
                 try:
@@ -487,7 +772,7 @@ class Player(QObject):
                 except Exception:
                     pass
 
-        self.active_pitches = {p for p, c in pitch_net.items() if c > 0}
+        self.active_pitches = {p for p, c in self._pitch_net.items() if c > 0}
         self.visualizer_updated.emit(list(self.active_pitches))
 
         pedal_restored = False

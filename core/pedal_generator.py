@@ -7,70 +7,18 @@ from typing import List, Optional, Callable
 from core.models import Note, MusicalSection, KeyEvent
 from core.core import get_time_groups
 
-# Cached weights — loaded once on first AI pedal call.
-_weights = None
+# Module-level ONNX session cache (replaces PedalGenerator._session class variable).
+_session = None
 
 
 def _get_model_path() -> str:
+    """Resolve pedal_bilstm.onnx relative to the application root.
+
+    Supports both normal execution (relative to this file's grandparent directory)
+    and PyInstaller bundles (sys._MEIPASS).
+    """
     base = sys._MEIPASS if getattr(sys, 'frozen', False) else os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    return os.path.join(base, 'pedal_bilstm.npz')
-
-
-def _load_weights() -> Optional[dict]:
-    path = _get_model_path()
-    if not os.path.exists(path):
-        return None
-    npz = np.load(path)
-    return {
-        'lstm1_W': npz['lstm1_W'],    # (2, 1024, 140)
-        'lstm1_R': npz['lstm1_R'],    # (2, 1024, 256)
-        'lstm1_B': npz['lstm1_B'],    # (2, 2048)
-        'lstm2_W': npz['lstm2_W'],    # (2, 1024, 512)
-        'lstm2_R': npz['lstm2_R'],    # (2, 1024, 256)
-        'lstm2_B': npz['lstm2_B'],    # (2, 2048)
-        'linear_W': npz['linear_W'],  # (512, 1)
-        'linear_B': npz['linear_B'],  # (1,)
-    }
-
-
-def _sigmoid(x: np.ndarray) -> np.ndarray:
-    return 1.0 / (1.0 + np.exp(-x))
-
-
-def _lstm_direction(x_seq: np.ndarray, W: np.ndarray, R: np.ndarray,
-                    B: np.ndarray, H: int) -> np.ndarray:
-    """Single-direction LSTM over a sequence. ONNX gate order: i, o, f, c."""
-    bias = B[:4*H] + B[4*H:]  # combine Wb and Rb
-    h = np.zeros(H, dtype=np.float32)
-    c = np.zeros(H, dtype=np.float32)
-    out = np.empty((len(x_seq), H), dtype=np.float32)
-    for t, x in enumerate(x_seq):
-        gates = x @ W.T + h @ R.T + bias
-        i = _sigmoid(gates[0*H:1*H])
-        o = _sigmoid(gates[1*H:2*H])
-        f = _sigmoid(gates[2*H:3*H])
-        g = np.tanh(gates[3*H:4*H])
-        c = f * c + i * g
-        h = o * np.tanh(c)
-        out[t] = h
-    return out
-
-
-def _bilstm_layer(x_seq: np.ndarray, W: np.ndarray, R: np.ndarray,
-                  B: np.ndarray, H: int) -> np.ndarray:
-    """Bidirectional LSTM layer. Returns (T, 2*H)."""
-    fwd = _lstm_direction(x_seq,        W[0], R[0], B[0], H)
-    bwd = _lstm_direction(x_seq[::-1],  W[1], R[1], B[1], H)[::-1]
-    return np.concatenate([fwd, bwd], axis=1)
-
-
-def _bilstm_forward(x: np.ndarray, weights: dict) -> np.ndarray:
-    """Full 2-layer BiLSTM + linear head. x: (1, T, 140) → preds: (T,)."""
-    seq = x[0]  # (T, 140)
-    out1 = _bilstm_layer(seq,  weights['lstm1_W'], weights['lstm1_R'], weights['lstm1_B'], 256)
-    out2 = _bilstm_layer(out1, weights['lstm2_W'], weights['lstm2_R'], weights['lstm2_B'], 256)
-    logits = out2 @ weights['linear_W'] + weights['linear_B']  # (T, 1)
-    return _sigmoid(logits[:, 0])  # (T,)
+    return os.path.join(base, 'pedal_bilstm.onnx')
 
 
 def generate_events(config: dict, final_notes: List[Note], sections: List[MusicalSection],
@@ -82,23 +30,9 @@ def generate_events(config: dict, final_notes: List[Note], sections: List[Musica
         return []
     events = []
 
-    if style == 'ai':
-        ai_events = _generate_ai_pedal(final_notes, debug_log)
-        if ai_events:
-            return ai_events
-        if debug_log is not None:
-            debug_log("[PEDAL] AI output rejected or unavailable — falling back to adaptive algorithm")
-        bass_notes = [n for n in final_notes if n.hand == 'left']
-        bass_notes.sort(key=lambda n: n.start_time)
-        if not bass_notes:
-            treble_notes = [n for n in final_notes if n.hand == 'right']
-            treble_notes.sort(key=lambda n: n.start_time)
-            return _generate_adaptive_pedal_driver(treble_notes, final_notes, debug_log)
-        return _generate_adaptive_pedal_driver(bass_notes, final_notes, debug_log)
-
     if style == 'hybrid':
         # TODO: re-enable when Pedal AI is integrated
-        if config.get('use_ai_pedal', True):
+        if False and config.get('use_ai_pedal', True):
             ai_events = _generate_ai_pedal(final_notes, debug_log)
             if ai_events:
                 return ai_events
@@ -156,20 +90,23 @@ def generate_events(config: dict, final_notes: List[Note], sections: List[Musica
 
 
 def _generate_ai_pedal(notes: List[Note], debug_log: Optional[Callable[[str], None]]) -> List[KeyEvent]:
-    global _weights
+    global _session
     fps = 50.0
+    model_path = _get_model_path()
 
-    if not os.path.exists(_get_model_path()):
-        if debug_log is not None:
-            debug_log("AI generation skipped: Model not found.")
+    # 1. Pipeline and Environment Validation
+    if not os.path.exists(model_path):
+        if debug_log is not None: debug_log("AI generation skipped: Model not found.")
         return []
 
-    if _weights is None:
+    if _session is None:
         try:
-            _weights = _load_weights()
+            import onnxruntime as ort
+
+            providers = ['DmlExecutionProvider', 'CUDAExecutionProvider', 'CPUExecutionProvider']
+            _session = ort.InferenceSession(model_path, providers=providers)
         except Exception as e:
-            if debug_log is not None:
-                debug_log(f"AI generation aborted: Failed to load weights -> {e}")
+            if debug_log is not None: debug_log(f"AI generation aborted: Runtime Error -> {str(e)}")
             return []
 
     # 2. Matrix Translation
@@ -182,19 +119,25 @@ def _generate_ai_pedal(notes: List[Note], debug_log: Optional[Callable[[str], No
         e_idx = int(note.end_time * fps)
         input_tensor[0, s_idx:e_idx, note.pitch] = note.velocity / 127.0
 
-    # 3. Chroma Augmentation
+    # 3. Chroma Augmentation — mirrors the on-the-fly feature engineering applied during training.
+    # Chroma collapses 128-dim piano roll to 12 pitch classes by summing across octaves.
     chroma = np.stack([input_tensor[0, :, c::12].sum(axis=1) for c in range(12)], axis=1)  # (T, 12)
     input_tensor = np.concatenate([input_tensor[0], chroma], axis=1)[np.newaxis]  # (1, T, 140)
 
-    # 4. NumPy BiLSTM Forward Pass
+    # 4. Hardware Agnostic Forward Pass
+    # Full sequence is passed in one shot — mirrors training (no chunking, cuDNN disabled for variable-length support).
+    # Chunking a BiLSTM severs the backward-direction context at every boundary, making bidirectionality meaningless.
+    input_name = _session.get_inputs()[0].name
+
     try:
-        preds = _bilstm_forward(input_tensor, _weights)  # (T,)
+        ort_outs = _session.run(None, {input_name: input_tensor})
+        preds = ort_outs[0][0, :, 0]
     except Exception as e:
-        if debug_log is not None:
-            debug_log(f"AI execution crashed during forward pass: {e}")
+        if debug_log is not None: debug_log(f"AI execution crashed during forward pass: {str(e)}")
         return []
 
     # 5. Silence Masking
+    # Mirrors the 0.35s gap logic from the algorithmic driver. Forces the tensor to 0 during rests.
     is_silent = np.ones(total_steps, dtype=bool)
     for note in notes:
         s_idx = int(note.start_time * fps)
@@ -208,21 +151,24 @@ def _generate_ai_pedal(notes: List[Note], debug_log: Optional[Callable[[str], No
     pedal_is_down = False
     single_threshold = 0.70
     last_up_time = -1.0
-    PEDAL_LAG = 0.05
+    PEDAL_LAG = 0.05  # Mechanical delay for PyNput registration
 
     for i in range(1, len(preds)):
         prev_val = preds[i-1]
         curr_val = preds[i]
         curr_time = i / fps
 
+        # Engagement (Down)
         if prev_val < single_threshold and curr_val >= single_threshold:
             if not pedal_is_down:
                 actual_down_time = curr_time
+                # Force mechanical delay if the AI attempted to press instantly after a lift
                 if actual_down_time - last_up_time < PEDAL_LAG:
                     actual_down_time = last_up_time + PEDAL_LAG
                 pedal_is_down = True
                 events.append(KeyEvent(actual_down_time, 1, 'pedal', 'down'))
 
+        # Release (Up)
         elif prev_val >= single_threshold and curr_val < single_threshold:
             if pedal_is_down:
                 pedal_is_down = False
@@ -233,6 +179,8 @@ def _generate_ai_pedal(notes: List[Note], debug_log: Optional[Callable[[str], No
         events.append(KeyEvent(max_time, 0, 'pedal', 'up'))
 
     # 7. Quality Assurance Rejection
+    # If the partially trained matrix is completely flat and outputs less than 4 discrete actions,
+    # it is mathematically defective. Reject it and fallback to the algorithmic generator.
     if len(events) <= 2:
         if debug_log is not None:
             debug_log("AI pipeline output rejected (Insufficient mathematical variance).")
