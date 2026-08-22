@@ -17,6 +17,42 @@ It preserves HuMidi's MIDI parsing, human-like performance, visualizer, and keyb
 
 This project is not an official HuMidi or Roblox product and is not affiliated with or endorsed by smyGitt or Roblox Corporation.
 
+## MIDI Files, Copyright, and Third-Party Sources
+
+HuMidi: Xingkong Edition is a MIDI-processing and keyboard-input automation tool. The ability of this software to open, process, play, or export a MIDI file does not grant the user any rights to that MIDI file, its arrangement, score, recording, lyrics, or underlying musical composition.
+
+Please note:
+
+- “Free to download” does not necessarily mean copyright-free or free to reuse.
+- A musical composition being in the public domain does not automatically place a later arrangement, transcription, edition, or MIDI file in the public domain.
+- MIDI files, arrangements, recordings, and other materials used in a video may be protected separately and may be governed by different licenses.
+- Before downloading, playing, recording, publishing, uploading, or redistributing a MIDI file, make sure that you own the necessary rights or have obtained appropriate permission.
+- A complete `.humidiplaylist` package may contain copies of MIDI files. Do not include MIDI files that you are not authorized to redistribute in publicly shared playlist packages, GitHub repositories, application bundles, or release assets.
+- If a license requires attribution, a license link, an indication of modifications, or distribution under the same license, you must comply with those requirements.
+
+To the maximum extent permitted by applicable law, users are responsible for the MIDI files and other content they import, process, play, record, publish, or distribute. The project maintainers and contributors make no representations regarding the copyright status of user-supplied third-party content and are not responsible for claims, takedowns, account penalties, or other losses resulting from unauthorized use of such content.
+
+### Openly Licensed MIDI Sources
+
+The following websites primarily provide public-domain or openly licensed music materials:
+
+- [Mutopia Project](https://www.mutopiaproject.org/) — Provides PDF, MIDI, and LilyPond files under public-domain or Creative Commons terms. Check the license shown on each individual work page.
+- [Wikimedia Commons](https://commons.wikimedia.org/) — Hosts some MIDI files with individual license information. Prefer files explicitly marked Public Domain or CC0.
+- [OpenScore](https://github.com/OpenScore/) — Provides collections of digitally engraved scores released under CC0, some of which may be converted or exported to MIDI.
+
+### Larger Community MIDI Libraries — License Verification Required
+
+The following community platforms generally offer larger and more diverse MIDI collections, including popular music, game music, film and television music, classical works, original compositions, and multiple user-created arrangements. They can be useful for discovering, previewing, and studying MIDI files.
+
+However, these platforms primarily contain user-uploaded or user-created content, and the source and licensing status of each file may vary. The availability of preview, download, or export features does not mean that a MIDI file, arrangement, or underlying composition is in the public domain or licensed for use in videos, livestreams, software releases, GitHub repositories, or publicly distributed playlist packages.
+
+- [MidiShow](https://www.midishow.com/) — Offers a large and diverse MIDI collection with many genres and versions. Before using a file, review its uploader notes, copyright notices, source information, and embedded MIDI metadata, and verify the copyright status of both the composition and arrangement.
+- [Online Sequencer – Sequences](https://onlinesequencer.net/sequences) — Offers a large collection of user-created sequences, transcriptions, arrangements, and remakes, with online playback and MIDI export. Before using another user’s sequence, verify the creator’s permission. If the sequence is based on an existing song, also verify the rights to the underlying work.
+
+These websites offer the advantage of broader and more varied content, but their files are not necessarily openly licensed. Users must verify the licensing status of each file individually.
+
+If a page does not explicitly identify a suitable license, such as Public Domain, CC0, CC BY, or another license compatible with the intended use, treat its copyright status as unknown. Contact the uploader, arranger, or relevant rights holder when necessary, and do not rely solely on labels such as “free download,” “no copyright,” or “export MIDI.”
+
 ## Download
 
 Download the latest version from [GitHub Releases](https://github.com/Xingkong3027/HuMidi-Xingkong-Edition/releases/latest).
