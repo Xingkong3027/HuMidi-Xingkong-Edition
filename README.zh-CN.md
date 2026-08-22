@@ -17,6 +17,33 @@ HuMidi：Xingkong Edition 基于
 
 本项目不是 HuMidi 或 Roblox 的官方产品，也不隶属于或受 smyGitt、Roblox Corporation 认可。
 
+## MIDI 文件、版权与第三方来源
+
+HuMidi: Xingkong Edition 是一个 MIDI 处理与键盘输入自动化工具。本项目不会因软件能够打开、处理、播放或导出某个 MIDI 文件，而授予用户对该 MIDI 文件、相关编曲、乐谱、录音、歌词或原始音乐作品的任何权利。
+
+请注意：
+
+- “免费下载”不等于“无版权”或“可以任意使用”。
+- 原始音乐作品已进入公有领域，不代表后来制作的编曲、转录、乐谱版本或 MIDI 文件也属于公有领域。
+- MIDI 文件、编曲、录音以及视频中使用的其他素材可能分别受到不同的版权或许可条款约束。
+- 在下载、播放、录制、发布、上传或重新分发 MIDI 文件之前，请确认你拥有相应权利或已获得有效许可。
+- 完整 `.humidiplaylist` 歌单包可能包含 MIDI 文件副本。请勿将无权分发的 MIDI 文件包含在公开分享的歌单包、GitHub 仓库、软件安装包或 Release 附件中。
+- 如果许可要求署名、提供许可链接、注明修改或以相同许可发布，请完整履行这些要求。
+
+在适用法律允许的最大范围内，用户应对其导入、处理、播放、录制、发布和分发的 MIDI 文件及其他内容负责。项目维护者和贡献者不对用户提供或使用的第三方内容作出版权保证，也不对未经授权使用第三方内容所产生的索赔、下架、账号处罚或其他损失负责。
+
+### 可查明许可的 MIDI 来源
+
+以下网站可以帮助寻找公有领域或采用开放许可的音乐资料：
+
+- [Mutopia Project](https://www.mutopiaproject.org/) — 提供 PDF、MIDI 和 LilyPond 文件；作品采用公有领域或 Creative Commons 许可，请查看每个作品页面标注的具体许可。
+- [Wikimedia Commons](https://commons.wikimedia.org/) — 收录部分 MIDI 文件；每个文件都有独立的许可说明，建议优先选择明确标注为 Public Domain 或 CC0 的文件。
+- [OpenScore](https://github.com/OpenScore/) — 提供以 CC0 发布的数字乐谱集合，部分内容可转换或导出为 MIDI。
+
+这些链接指向独立的第三方网站，仅为方便用户查找资料而提供。本项目与这些网站没有隶属、合作、赞助或认可关系，也不保证其内容始终可用、准确、合法或适合特定用途。第三方网站的内容和条款可能发生变化，请在每次使用前自行核对具体文件的作者、来源和许可。
+
+本节仅提供一般性信息，不构成法律意见。
+
 ## 下载
 
 请从 [GitHub Releases](https://github.com/Xingkong3027/HuMidi-Xingkong-Edition/releases/latest) 下载最新版本。
