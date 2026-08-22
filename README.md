@@ -19,39 +19,47 @@ This project is not an official HuMidi or Roblox product and is not affiliated w
 
 ## MIDI Files, Copyright, and Third-Party Sources
 
-HuMidi: Xingkong Edition is a MIDI-processing and keyboard-input automation tool. The ability of this software to open, process, play, or export a MIDI file does not grant the user any rights to that MIDI file, its arrangement, score, recording, lyrics, or underlying musical composition.
+HuMidi: Xingkong Edition is a MIDI-processing and keyboard-input automation tool. The ability of this software to open, process, play, or export a MIDI file does not automatically grant the user any rights to that MIDI file, its arrangement, score, recording, lyrics, or underlying musical composition.
+
+Users generally do not need to be overly concerned when playing MIDI files locally for personal learning or software testing. However, MIDI files may come from different sources and may be subject to different licensing conditions. Additional care is recommended when publishing a performance, uploading a video, livestreaming, monetizing content, or redistributing a MIDI file or playlist package.
 
 Please note:
 
-- “Free to download” does not necessarily mean copyright-free or free to reuse.
-- A musical composition being in the public domain does not automatically place a later arrangement, transcription, edition, or MIDI file in the public domain.
-- MIDI files, arrangements, recordings, and other materials used in a video may be protected separately and may be governed by different licenses.
-- Before downloading, playing, recording, publishing, uploading, or redistributing a MIDI file, make sure that you own the necessary rights or have obtained appropriate permission.
-- A complete `.humidiplaylist` package may contain copies of MIDI files. Do not include MIDI files that you are not authorized to redistribute in publicly shared playlist packages, GitHub repositories, application bundles, or release assets.
-- If a license requires attribution, a license link, an indication of modifications, or distribution under the same license, you must comply with those requirements.
+* “Free to download” means that a file can be obtained from a website, but it does not necessarily mean that the file is copyright-free or may be redistributed without restriction.
+* A musical composition being in the public domain does not automatically place a later arrangement, transcription, score edition, or MIDI file in the public domain.
+* A MIDI file, arrangement, recording, lyrics, and other materials appearing in a video may each be governed by separate rights or licenses.
+* If no license is shown, the file should be treated as having an unknown copyright status—not automatically as copyright-free or necessarily infringing.
+* MIDI files with an unknown status are best limited to personal learning, local playback, and software testing in accordance with the source website’s rules. Before publishing or redistributing them, consider contacting the creator, checking the original source, or finding an openly licensed alternative.
+* Before using a MIDI file or its rendered performance in a public video, livestream, software demonstration, GitHub repository, release asset, or other public material, review any creator notes, copyright notices, embedded metadata, and license information.
+* A complete `.humidiplaylist` package may contain copies of MIDI files. Before sharing such a package publicly, check whether its MIDI files may be redistributed. If this cannot be confirmed, consider sharing a normal playlist without embedded MIDI files and allowing recipients to provide their own copies.
+* When a license requires attribution, a license link, an indication of modifications, or distribution under the same license, follow those requirements.
 
-To the maximum extent permitted by applicable law, users are responsible for the MIDI files and other content they import, process, play, record, publish, or distribute. The project maintainers and contributors make no representations regarding the copyright status of user-supplied third-party content and are not responsible for claims, takedowns, account penalties, or other losses resulting from unauthorized use of such content.
+This project cannot verify every MIDI file independently imported by its users. Users should make a reasonable decision based on the source of each file and their intended use, while following the source platform’s rules and applicable law. To the extent permitted by applicable law, the project maintainers and contributors make no representations regarding the copyright status of user-supplied third-party content.
 
-### Openly Licensed MIDI Sources
+### MIDI Sources with Identifiable Licensing
 
-The following websites primarily provide public-domain or openly licensed music materials:
+The following websites may help users find public-domain or openly licensed music materials. These sources are generally better suited to public demonstrations, videos, and distributable playlists:
 
-- [Mutopia Project](https://www.mutopiaproject.org/) — Provides PDF, MIDI, and LilyPond files under public-domain or Creative Commons terms. Check the license shown on each individual work page.
-- [Wikimedia Commons](https://commons.wikimedia.org/) — Hosts some MIDI files with individual license information. Prefer files explicitly marked Public Domain or CC0.
-- [OpenScore](https://github.com/OpenScore/) — Provides collections of digitally engraved scores released under CC0, some of which may be converted or exported to MIDI.
+* [Mutopia Project](https://www.mutopiaproject.org/) — Provides PDF, MIDI, and LilyPond files under public-domain or Creative Commons terms. Check the license displayed on each individual work page.
+* [Wikimedia Commons](https://commons.wikimedia.org/) — Hosts some MIDI files with individual licensing information. Files explicitly marked Public Domain or CC0 are generally the simplest choices.
+* [OpenScore](https://github.com/OpenScore/) — Provides collections of digitally engraved scores released under CC0, some of which may be converted or exported to MIDI.
 
-### Larger Community MIDI Libraries — License Verification Required
+Even when using these websites, review the individual work page because different files may be provided under different licenses.
 
-The following community platforms generally offer larger and more diverse MIDI collections, including popular music, game music, film and television music, classical works, original compositions, and multiple user-created arrangements. They can be useful for discovering, previewing, and studying MIDI files.
+### Larger and More Diverse Community MIDI Libraries
 
-However, these platforms primarily contain user-uploaded or user-created content, and the source and licensing status of each file may vary. The availability of preview, download, or export features does not mean that a MIDI file, arrangement, or underlying composition is in the public domain or licensed for use in videos, livestreams, software releases, GitHub repositories, or publicly distributed playlist packages.
+The following community platforms generally provide larger and more varied MIDI collections, including classical music, popular music, game and film music, original compositions, transcriptions, and user-created arrangements. They can be useful for discovering music, online preview, personal learning, and testing HuMidi’s features:
 
-- [MidiShow](https://www.midishow.com/) — Offers a large and diverse MIDI collection with many genres and versions. Before using a file, review its uploader notes, copyright notices, source information, and embedded MIDI metadata, and verify the copyright status of both the composition and arrangement.
-- [Online Sequencer – Sequences](https://onlinesequencer.net/sequences) — Offers a large collection of user-created sequences, transcriptions, arrangements, and remakes, with online playback and MIDI export. Before using another user’s sequence, verify the creator’s permission. If the sequence is based on an existing song, also verify the rights to the underlying work.
+* [MidiShow](https://www.midishow.com/) — Offers a large collection covering many genres and different MIDI versions. Work pages may include uploader notes, copyright notices, source information, and MIDI file properties that can help users evaluate a file.
+* [Online Sequencer – Sequences](https://onlinesequencer.net/sequences) — Offers many user-created compositions, transcriptions, arrangements, and remakes, with online playback and MIDI export.
 
-These websites offer the advantage of broader and more varied content, but their files are not necessarily openly licensed. Users must verify the licensing status of each file individually.
+The advantage of these community platforms is their larger and more diverse selection. However, because their content is primarily uploaded or created by users, licensing conditions may differ between files. The availability of preview, download, or export features does not necessarily grant permission to publish or redistribute the content.
 
-If a page does not explicitly identify a suitable license, such as Public Domain, CC0, CC BY, or another license compatible with the intended use, treat its copyright status as unknown. Contact the uploader, arranger, or relevant rights holder when necessary, and do not rely solely on labels such as “free download,” “no copyright,” or “export MIDI.”
+Content without clear licensing information may be used for personal learning, local playback, and feature testing in accordance with the platform’s rules. Before using it in a public video, livestream, software release, or publicly distributed playlist package, consider verifying the rights to the underlying composition, arrangement, and MIDI sequence. When the status cannot be confirmed, a Public Domain, CC0, CC BY, or otherwise clearly licensed alternative may be a safer choice.
+
+All links above lead to independent third-party websites and are provided solely for the convenience of users searching for MIDI materials. This project is not affiliated with, sponsored by, endorsed by, or responsible for these services, and cannot guarantee that their content, licensing information, or availability will remain unchanged. Always refer to the latest information shown on the individual file page.
+
+This section provides general information only and does not constitute legal advice.
 
 ## Download
 
