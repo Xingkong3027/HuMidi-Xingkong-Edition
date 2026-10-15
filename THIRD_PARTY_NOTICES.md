@@ -1,56 +1,11 @@
-# Third-Party Notices
+# Third-party notices — HuMidi Xingkong Edition 2.1.2-xk.12
 
-HuMidi: Xingkong Edition depends on third-party software. The list below is a
-human-readable summary; the license text supplied by each dependency remains
-authoritative. Release maintainers should verify the exact dependency versions
-and notices produced by each release build.
+Original HuMidi: Copyright (c) 2026 smyGitt, MIT. Xingkong modifications: Copyright (c) 2026 Xingkong3027, MIT. Preserve `LICENSE`, `LICENSES/HuMidi-MIT.txt`, `LICENSES/Xingkong-MIT.txt` and `NOTICE.md` with the corresponding distribution.
 
-## HuMidi
+This edition uses the Rust / Tauri 2 / React architecture from upstream HuMidi 2.1.2. It does not embed the old Python / PyQt6 runtime. Historical Python notices are retained under `docs/legacy/` for historical attribution; they describe that older edition.
 
-- Project: <https://github.com/smyGitt/HuMidi-Roblox-Piano-Autoplayer>
-- License: MIT
-- Copyright: Copyright (c) 2026 smyGitt
-- Preserved license: [`LICENSES/HuMidi-MIT.txt`](LICENSES/HuMidi-MIT.txt)
+The application embeds the unmodified upstream 2.1.2 PedalAI safetensors model. Its About/License page retains credits for the POP909, GiantMIDI-Piano and Saarland Music Data training datasets and their stated licenses. Saarland Music Data, MIDI-Audio Piano Music v2 is credited as Müller et al. (2024), CC BY 3.0, <https://doi.org/10.5281/zenodo.13753319>.
 
-## PyQt6
+The frontend and Rust build use third-party dependencies including Tauri, React, Phosphor Icons, Candle, Enigo, rdev, midly, zip and encoding_rs. `package-lock.json` and `src-tauri/Cargo.lock` record the resolved package versions. Individual dependencies retain their own licenses; the project's MIT license does not replace them.
 
-- Project: <https://riverbankcomputing.com/software/pyqt/>
-- License: GNU GPL v3 or a Riverbank commercial license
-- Notice: the free PyQt6 edition is GPL-licensed. Distributing a bundled
-  executable requires GPL-compatible distribution terms and corresponding
-  source availability, unless a suitable commercial license is held.
-- GPL text: [`LICENSES/GPL-3.0.txt`](LICENSES/GPL-3.0.txt)
-
-## Qt 6
-
-- Project: <https://www.qt.io/>
-- License: components included by the PyQt6 wheel may use LGPL v3, GPL v3, or
-  other Qt licenses. Review the licenses bundled in the release artifact.
-
-## mido
-
-- Project: <https://github.com/mido/mido>
-- License: MIT
-
-## numpy
-
-- Project: <https://numpy.org/>
-- License: BSD 3-Clause
-
-## pynput
-
-- Project: <https://github.com/moses-palmer/pynput>
-- License: LGPL v3
-
-## PyInstaller
-
-- Project: <https://pyinstaller.org/>
-- License: GPL v2-or-later with a special exception for distributing bundled
-  applications. The exception does not override the licenses of bundled
-  dependencies such as PyQt6.
-
-## Optional development tools
-
-- Ruff: MIT
-- GitHub Actions used by this repository retain their respective licenses.
-
+The release license bundle includes an inventory and available original copyright/license texts from locked Rust crates and production npm packages. See `LICENSES/DEPENDENCIES.json`, `LICENSES/RUST-DEPENDENCIES.txt` and `LICENSES/NPM-DEPENDENCIES.txt`. The inventory includes platform and build dependencies as a conservative superset; individual original texts remain authoritative. Regenerate it with `python qa/collect-licenses.py` after installing locked dependencies.

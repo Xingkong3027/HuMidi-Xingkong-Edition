@@ -1,7 +1,0 @@
-exclude = ["backup/"]
-
-[lint]
-# Keep CI focused on syntax errors, invalid control flow, and undefined names.
-# The inherited codebase predates a full style migration; broader rules can be
-# enabled incrementally without blocking functional releases.
-select = ["E9", "F63", "F7", "F82"]

@@ -1,0 +1,154 @@
+import { translateNode } from "../../lib/i18n";
+import { usePersistedState } from "../../state/usePersistedState";
+import { parseOneOf } from "../../state/persistedParsers";
+import { TabPage } from "../../components/TabPage";
+
+const MIT_LICENSE = (year: string, holder: string) => `MIT License
+
+Copyright (c) ${year} ${holder}
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+`;
+
+const LICENSE_TEXTS: Record<string, string> = {
+  HuMidi: MIT_LICENSE("2026", "smyGitt"),
+
+  Xingkong:
+    "HuMidi · Xingkong 2.1.2-xk.12\n\n基于 smyGitt / HuMidi 2.1.2，迁移 Xingkong3027 分支的高级歌单与演奏功能。\n\n原项目：https://github.com/smyGitt/HuMidi-Roblox-Piano-Autoplayer\nXingkong 分支：https://github.com/Xingkong3027/HuMidi-Xingkong-Edition\n\n保留原项目版权及第三方许可，许可原文见其余分页。",
+
+  "PedalAI Dataset": `The following datasets were used to train the BiLSTM AI pedal timing
+model bundled with HuMidi.
+
+----------------
+POP909
+----------------
+A piano MIDI dataset of 909 popular songs with performance annotations.
+
+Citation:
+  Wang, Z., Chen, K., Jiang, J., Zhang, Y., Xu, M., Dai, S., Xia, G.,
+  & Fazekas, G. (2020). POP909: A Pop-song Dataset for Music Arrangement
+  Generation. Proceedings of ISMIR 2020.
+
+License : MIT
+URL     : https://github.com/music-x-lab/POP909-Dataset
+
+----------------
+GiantMIDI-Piano
+----------------
+A large-scale MIDI dataset of classical piano music transcribed from
+audio recordings.
+
+Citation:
+  Kong, Q., Li, B., Chen, J., & Wang, Y. (2020). GiantMIDI-Piano: A
+  large-scale MIDI dataset for classical piano music. arXiv:2010.07061.
+
+License : Creative Commons Attribution 4.0 International (CC BY 4.0)
+
+  You are free to share and adapt the material for any purpose, provided
+  appropriate credit is given.
+
+URL     : https://github.com/bytedance/GiantMIDI-Piano
+
+----------------
+Saarland Music Data
+----------------
+
+Citation:
+  Müller, M., Konz, V., Arifi-Müller, V., Bogler, W., & Zeitler, J. (2024).
+  Saarland Music Data: MIDI-Audio Piano Music (Version v2) [Dataset].
+  Zenodo. 12th International Conference on Music Information Retrieval
+  (ISMIR), Miami, USA. https://doi.org/10.5281/zenodo.13753319
+
+License : Creative Commons Attribution 3.0 Unported (CC BY 3.0)
+URL     : https://zenodo.org/records/13753319
+
+`,
+
+  "Third-Party Libraries": `tauri
+  License : MIT OR Apache-2.0
+  URL     : https://github.com/tauri-apps/tauri
+
+tauri-plugin-dialog / tauri-plugin-opener / tauri-plugin-global-shortcut
+  License : MIT OR Apache-2.0
+  URL     : https://github.com/tauri-apps/plugins-workspace
+
+react / react-dom
+  License : MIT
+  URL     : https://react.dev
+
+@tauri-apps/api
+  License : MIT OR Apache-2.0
+  URL     : https://github.com/tauri-apps/tauri
+
+serde / serde_json
+  License : MIT OR Apache-2.0
+  URL     : https://github.com/serde-rs
+
+candle-core
+  License : MIT OR Apache-2.0
+  URL     : https://github.com/huggingface/candle
+
+enigo
+  License : MIT
+  URL     : https://github.com/enigo-rs/enigo
+
+rdev
+  License : MIT
+  URL     : https://github.com/Narsil/rdev
+
+midly
+  License : Unlicense
+  URL     : https://github.com/negamartin/midly
+
+dirs / rand / chrono
+  License : MIT OR Apache-2.0
+  URL     : https://github.com/soc/dirs-rs, https://github.com/rust-random/rand, https://github.com/chronotope/chrono
+`,
+
+  "Phosphor Icons": MIT_LICENSE("2020", "Phosphor Icons"),
+};
+
+const NAV_ITEMS = Object.keys(LICENSE_TEXTS);
+
+export function LicenseTab() {
+  const [active, setActive] = usePersistedState("ui_license_tab", 0, {
+    parse: parseOneOf(NAV_ITEMS.map((_, index) => index)),
+  });
+
+  return (
+    <div className="license-tab">
+      <TabPage
+        tabs={NAV_ITEMS.map(
+          (name) =>
+            ({
+              "PedalAI Dataset": "PedalAI 数据集",
+              "Third-Party Libraries": "第三方组件",
+              "Phosphor Icons": "Phosphor 图标",
+            })[name] ?? name,
+        )}
+        active={active}
+        onChange={setActive}
+      >
+        <div className="license-tab__text">
+          {translateNode(LICENSE_TEXTS[NAV_ITEMS[active]])}
+        </div>
+      </TabPage>
+    </div>
+  );
+}

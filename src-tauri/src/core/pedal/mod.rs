@@ -1,0 +1,1325 @@
+pub mod auto_curve;
+pub mod curve;
+pub mod legacy;
+pub mod model;
+pub mod peak;
+
+use crate::core::config::PlaybackConfig;
+use crate::core::midi::get_time_groups;
+use crate::core::models::{KeyEvent, MusicalSection, Note};
+use auto_curve::auto_curves;
+use curve::ThresholdCurves;
+use model::{PedalModel, FEATURES};
+
+pub const FPS: f64 = 50.0;
+const MIN_CONFIDENCE_GATE: f32 = 0.3;
+const PEDAL_LAG: f64 = 0.05;
+const SILENCE_TAIL_SECONDS: f64 = 0.35;
+const MIN_EVENTS_EXCLUSIVE: usize = 2;
+const UNSAFE_INTERVALS: [i32; 2] = [1, 6];
+const PITCHES: usize = 128;
+const PITCH_CLASSES: usize = 12;
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct AiThresholds {
+    pub curves: ThresholdCurves,
+    pub confidence: Vec<f32>,
+}
+
+pub fn otsu_threshold(preds: &[f32]) -> f32 {
+    const NUM_BINS: usize = 256;
+    let mut counts = [0u32; NUM_BINS];
+    for &v in preds {
+        if !(0.0..=1.0).contains(&v) {
+            continue;
+        }
+        let bin = ((v * NUM_BINS as f32) as usize).min(NUM_BINS - 1);
+        counts[bin] += 1;
+    }
+    let total: u32 = counts.iter().sum();
+    if total == 0 {
+        return 0.5;
+    }
+
+    let bin_edges: Vec<f32> = (0..=NUM_BINS).map(|i| i as f32 / NUM_BINS as f32).collect();
+    let bin_centers: Vec<f32> = (0..NUM_BINS)
+        .map(|i| (bin_edges[i] + bin_edges[i + 1]) / 2.0)
+        .collect();
+
+    let p: Vec<f64> = counts.iter().map(|&c| c as f64 / total as f64).collect();
+    let mut omega = vec![0.0f64; NUM_BINS];
+    let mut mu = vec![0.0f64; NUM_BINS];
+    let mut running_omega = 0.0;
+    let mut running_mu = 0.0;
+    for i in 0..NUM_BINS {
+        running_omega += p[i];
+        running_mu += p[i] * bin_centers[i] as f64;
+        omega[i] = running_omega;
+        mu[i] = running_mu;
+    }
+    let mu_total = mu[NUM_BINS - 1];
+
+    let mut best_idx = 0usize;
+    let mut best_val = f64::MIN;
+    for i in 0..NUM_BINS - 1 {
+        let denom = omega[i] * (1.0 - omega[i]);
+        let sigma_b_sq = if denom > 1e-12 {
+            (mu_total * omega[i] - mu[i]).powi(2) / denom
+        } else {
+            0.0
+        };
+        if sigma_b_sq > best_val {
+            best_val = sigma_b_sq;
+            best_idx = i;
+        }
+    }
+    bin_edges[best_idx + 1]
+}
+
+pub fn generate_harmonic_pedal(bass_notes: &[Note]) -> Vec<KeyEvent> {
+    let mut events = Vec::new();
+    if bass_notes.is_empty() {
+        return events;
+    }
+    let mut current_bass_pitch: i32 = -1;
+    let mut has_gap = false;
+    let mut prev_end = 0.0;
+    for (i, note) in bass_notes.iter().enumerate() {
+        let is_new_harmony = note.pitch != current_bass_pitch;
+        if i == 0 {
+            events.push(KeyEvent::new(note.start_time, 1, "pedal", "down"));
+        } else {
+            prev_end = bass_notes[i - 1].end_time();
+            has_gap = (note.start_time - prev_end) > 0.15;
+        }
+        if i > 0 && has_gap {
+            events.push(KeyEvent::new(prev_end, 0, "pedal", "up"));
+            events.push(KeyEvent::new(note.start_time, 1, "pedal", "down"));
+        } else if is_new_harmony {
+            events.push(KeyEvent::new(note.start_time, 0, "pedal", "up"));
+            events.push(KeyEvent::new(note.start_time, 1, "pedal", "down"));
+        }
+        current_bass_pitch = note.pitch;
+    }
+    let final_end = bass_notes
+        .iter()
+        .map(|n| n.end_time())
+        .fold(f64::MIN, f64::max);
+    events.push(KeyEvent::new(final_end, 0, "pedal", "up"));
+    events
+}
+
+pub fn generate_adaptive_pedal_driver(driver_notes: &[Note], all_notes: &[Note]) -> Vec<KeyEvent> {
+    let mut events = Vec::new();
+    if driver_notes.is_empty() {
+        return events;
+    }
+    let all_note_times: Vec<f64> = all_notes.iter().map(|n| n.start_time).collect();
+
+    for i in 0..driver_notes.len() {
+        let curr = &driver_notes[i];
+        let next_n = driver_notes.get(i + 1);
+
+        if i == 0 {
+            events.push(KeyEvent::new(curr.start_time, 1, "pedal", "down"));
+        }
+
+        let gap = next_n
+            .map(|n| n.start_time - curr.end_time())
+            .unwrap_or(0.0);
+
+        if gap > 0.35 {
+            events.push(KeyEvent::new(curr.end_time(), 0, "pedal", "up"));
+            if let Some(next_n) = next_n {
+                events.push(KeyEvent::new(next_n.start_time, 1, "pedal", "down"));
+            }
+        } else if let Some(next_n) = next_n {
+            let mut should_repedal = false;
+            let linear_interval = (next_n.pitch - curr.pitch).abs() % 12;
+            if UNSAFE_INTERVALS.contains(&linear_interval) {
+                should_repedal = true;
+            }
+            if !should_repedal {
+                let lo = all_note_times.partition_point(|&t| t < next_n.start_time - 0.05);
+                let hi = all_note_times.partition_point(|&t| t <= next_n.start_time + 0.05);
+                let concurrent = &all_notes[lo..hi];
+                if !concurrent.is_empty() {
+                    let lowest_pitch = concurrent.iter().map(|n| n.pitch).min().unwrap();
+                    for n in concurrent {
+                        let vertical_interval = (n.pitch - lowest_pitch).abs() % 12;
+                        if UNSAFE_INTERVALS.contains(&vertical_interval) {
+                            should_repedal = true;
+                            break;
+                        }
+                    }
+                }
+            }
+            if should_repedal {
+                events.push(KeyEvent::new(next_n.start_time, 0, "pedal", "up"));
+                events.push(KeyEvent::new(
+                    next_n.start_time + PEDAL_LAG,
+                    1,
+                    "pedal",
+                    "down",
+                ));
+            }
+        }
+    }
+
+    let final_end = driver_notes
+        .iter()
+        .map(|n| n.end_time())
+        .fold(f64::MIN, f64::max);
+    events.push(KeyEvent::new(final_end, 0, "pedal", "up"));
+    events
+}
+
+fn rhythmic_strategy(sections: &[MusicalSection]) -> Vec<KeyEvent> {
+    let mut events = Vec::new();
+    for section in sections {
+        let mut lh_notes: Vec<Note> = section
+            .notes
+            .iter()
+            .filter(|n| n.hand == "left")
+            .cloned()
+            .collect();
+        lh_notes.sort_by(|a, b| a.start_time.partial_cmp(&b.start_time).unwrap());
+        if lh_notes.is_empty() {
+            let start = section.notes[0].start_time;
+            let end = section
+                .notes
+                .iter()
+                .map(|n| n.end_time())
+                .fold(f64::MIN, f64::max);
+            events.push(KeyEvent::new(start, 1, "pedal", "down"));
+            events.push(KeyEvent::new(end, 0, "pedal", "up"));
+            continue;
+        }
+        for group in get_time_groups(&lh_notes) {
+            let start = group[0].start_time;
+            let end = group.iter().map(|n| n.end_time()).fold(f64::MIN, f64::max);
+            events.push(KeyEvent::new(start, 1, "pedal", "down"));
+            events.push(KeyEvent::new(end, 0, "pedal", "up"));
+        }
+    }
+    events
+}
+
+fn harmonic_strategy(sections: &[MusicalSection]) -> Vec<KeyEvent> {
+    let mut events = Vec::new();
+    for section in sections {
+        let mut lh_notes: Vec<Note> = section
+            .notes
+            .iter()
+            .filter(|n| n.hand == "left")
+            .cloned()
+            .collect();
+        lh_notes.sort_by(|a, b| a.start_time.partial_cmp(&b.start_time).unwrap());
+        if lh_notes.is_empty() {
+            let start = section.notes[0].start_time;
+            let end = section
+                .notes
+                .iter()
+                .map(|n| n.end_time())
+                .fold(f64::MIN, f64::max);
+            events.push(KeyEvent::new(start, 1, "pedal", "down"));
+            events.push(KeyEvent::new(end, 0, "pedal", "up"));
+            continue;
+        }
+        events.extend(generate_harmonic_pedal(&lh_notes));
+    }
+    events
+}
+
+pub fn build_input_features(notes: &[Note], fps: f64, total_steps: usize) -> Vec<f32> {
+    let mut pitch_roll = vec![false; total_steps * PITCHES];
+    for note in notes {
+        if !(0..PITCHES as i32).contains(&note.pitch) {
+            continue;
+        }
+        let s_idx = (note.start_time * fps) as usize;
+        let e_idx = ((note.end_time() * fps) as usize).min(total_steps);
+        for t in s_idx..e_idx {
+            pitch_roll[t * PITCHES + note.pitch as usize] = true;
+        }
+    }
+    let mut features = vec![0.0f32; total_steps * FEATURES];
+    for t in 0..total_steps {
+        for p in 0..PITCHES {
+            let starts_here =
+                pitch_roll[t * PITCHES + p] && (t == 0 || !pitch_roll[(t - 1) * PITCHES + p]);
+            if starts_here {
+                features[t * FEATURES + p] = 1.0;
+                features[t * FEATURES + PITCHES + p % PITCH_CLASSES] += 1.0;
+            }
+        }
+    }
+    features
+}
+
+fn sorted_copy(values: &[f32]) -> Vec<f32> {
+    let mut v = values.to_vec();
+    v.sort_by(|a, b| a.partial_cmp(b).unwrap());
+    v
+}
+
+fn median(sorted_data: &[f32]) -> f32 {
+    let n = sorted_data.len();
+    if n == 0 {
+        return 0.0;
+    }
+    if n % 2 == 1 {
+        sorted_data[n / 2]
+    } else {
+        (sorted_data[n / 2 - 1] + sorted_data[n / 2]) / 2.0
+    }
+}
+
+fn percentile(sorted_data: &[f32], pct: f64) -> f32 {
+    let n = sorted_data.len();
+    if n == 0 {
+        return 0.0;
+    }
+    if n == 1 {
+        return sorted_data[0];
+    }
+    let pct = pct.clamp(0.0, 100.0);
+    let idx = (n - 1) as f64 * pct / 100.0;
+    let lo = idx.floor() as usize;
+    let hi = idx.ceil() as usize;
+    if lo == hi {
+        sorted_data[lo]
+    } else {
+        let frac = (idx - lo as f64) as f32;
+        sorted_data[lo] + (sorted_data[hi] - sorted_data[lo]) * frac
+    }
+}
+
+fn curve_events(preds: &[f32], curves: &ThresholdCurves, fps: f64, max_time: f64) -> Vec<KeyEvent> {
+    let mut events = Vec::new();
+    let mut pedal_is_down = false;
+    for (i, &curr_val) in preds.iter().enumerate().skip(1) {
+        if curr_val == 0.0 {
+            continue;
+        }
+        let curr_time = i as f64 / fps;
+        let Some((threshold_on, threshold_off)) = curves.at(curr_time) else {
+            continue;
+        };
+        let value = f64::from(curr_val);
+        if !pedal_is_down && value > threshold_on {
+            pedal_is_down = true;
+            events.push(KeyEvent::new(curr_time, 1, "pedal", "down"));
+        } else if pedal_is_down && value <= threshold_off {
+            pedal_is_down = false;
+            events.push(KeyEvent::new(curr_time, 0, "pedal", "up"));
+        }
+    }
+    if pedal_is_down {
+        events.push(KeyEvent::new(max_time, 0, "pedal", "up"));
+    }
+    events
+}
+
+fn process_ai_predictions_with_mode(
+    mut preds: Vec<f32>,
+    notes: &[Note],
+    max_time: f64,
+    fps: f64,
+    custom: Option<&ThresholdCurves>,
+    custom_mode: bool,
+) -> (Vec<KeyEvent>, Option<AiThresholds>) {
+    let total_steps = preds.len();
+
+    let mut is_silent = vec![true; total_steps];
+    for note in notes {
+        let s_idx = (note.start_time * fps) as usize;
+        let e_idx = (((note.end_time() + SILENCE_TAIL_SECONDS) * fps) as usize).min(total_steps);
+        for t in s_idx..e_idx {
+            is_silent[t] = false;
+        }
+    }
+    for t in 0..total_steps {
+        if is_silent[t] {
+            preds[t] = 0.0;
+        }
+    }
+
+    let active_preds: Vec<f32> = preds.iter().copied().filter(|&p| p > 0.0).collect();
+    if active_preds.is_empty() {
+        return (Vec::new(), None);
+    }
+    let max_active = active_preds.iter().copied().fold(f32::MIN, f32::max);
+    if max_active < MIN_CONFIDENCE_GATE {
+        return (Vec::new(), None);
+    }
+
+    let Some(auto) = auto_curves(&preds, fps) else {
+        return (Vec::new(), None);
+    };
+    let (curves, events) = if custom_mode {
+        let curves = custom.cloned().unwrap_or(auto);
+        let events = curve_events(&preds, &curves, fps, max_time);
+        (curves, events)
+    } else {
+        (auto, peak::peak_events(&preds, fps, max_time))
+    };
+
+    if events.len() <= MIN_EVENTS_EXCLUSIVE {
+        return (Vec::new(), None);
+    }
+
+    (
+        events,
+        Some(AiThresholds {
+            curves,
+            confidence: preds,
+        }),
+    )
+}
+
+#[cfg(test)]
+fn process_ai_predictions(
+    preds: Vec<f32>,
+    notes: &[Note],
+    max_time: f64,
+    fps: f64,
+    custom: Option<&ThresholdCurves>,
+) -> (Vec<KeyEvent>, Option<AiThresholds>) {
+    process_ai_predictions_with_mode(preds, notes, max_time, fps, custom, custom.is_some())
+}
+
+pub fn generate_ai_pedal(
+    model: &PedalModel,
+    notes: &[Note],
+    custom: Option<&ThresholdCurves>,
+) -> (Vec<KeyEvent>, Option<AiThresholds>) {
+    generate_ai_pedal_with_mode(model, notes, custom, false, custom.is_some())
+}
+fn generate_ai_pedal_with_mode(
+    model: &PedalModel,
+    notes: &[Note],
+    custom: Option<&ThresholdCurves>,
+    optimized: bool,
+    custom_mode: bool,
+) -> (Vec<KeyEvent>, Option<AiThresholds>) {
+    if notes.is_empty() {
+        return (Vec::new(), None);
+    }
+
+    let max_time = notes.iter().map(|n| n.end_time()).fold(f64::MIN, f64::max);
+    let total_steps = (max_time * FPS).ceil() as usize + 1;
+
+    let features = build_input_features(notes, FPS, total_steps);
+
+    let preds = match model.cached_forward_with_mode(&features, total_steps, optimized) {
+        Ok(p) => p,
+        Err(_) => return (Vec::new(), None),
+    };
+
+    process_ai_predictions_with_mode(preds, notes, max_time, FPS, custom, custom_mode)
+}
+
+fn custom_ai_mode(config: &PlaybackConfig) -> bool {
+    config.pedal_ai_mode == "custom"
+        || (config.pedal_ai_mode == "legacy"
+            && (!config.pedal_curve_on.is_empty() || !config.pedal_curve_off.is_empty()))
+}
+fn resolve_custom_curves(config: &PlaybackConfig) -> Option<ThresholdCurves> {
+    if !custom_ai_mode(config) {
+        return None;
+    }
+    ThresholdCurves {
+        on: config.pedal_curve_on.clone(),
+        off: config.pedal_curve_off.clone(),
+    }
+    .sanitized()
+}
+
+fn adaptive_fallback(notes: &[Note]) -> Vec<KeyEvent> {
+    let mut bass_notes: Vec<Note> = notes.iter().filter(|n| n.hand == "left").cloned().collect();
+    bass_notes.sort_by(|a, b| a.start_time.partial_cmp(&b.start_time).unwrap());
+    if bass_notes.is_empty() {
+        let mut treble_notes: Vec<Note> = notes
+            .iter()
+            .filter(|n| n.hand == "right")
+            .cloned()
+            .collect();
+        treble_notes.sort_by(|a, b| a.start_time.partial_cmp(&b.start_time).unwrap());
+        return generate_adaptive_pedal_driver(&treble_notes, notes);
+    }
+    generate_adaptive_pedal_driver(&bass_notes, notes)
+}
+
+fn ai_strategy(
+    model: Option<&PedalModel>,
+    config: &PlaybackConfig,
+    notes: &[Note],
+) -> (Vec<KeyEvent>, Option<AiThresholds>) {
+    if let Some(model) = model {
+        let custom = resolve_custom_curves(config);
+        let (events, thresholds) = generate_ai_pedal_with_mode(
+            model,
+            notes,
+            custom.as_ref(),
+            config.performance_optimization,
+            custom_ai_mode(config),
+        );
+        if !events.is_empty() {
+            return (events, thresholds);
+        }
+    }
+    (adaptive_fallback(notes), None)
+}
+
+fn hybrid_strategy(
+    model: Option<&PedalModel>,
+    config: &PlaybackConfig,
+    notes: &[Note],
+) -> (Vec<KeyEvent>, Option<AiThresholds>) {
+    if config.use_ai_pedal {
+        if let Some(model) = model {
+            let custom = resolve_custom_curves(config);
+            let (events, thresholds) = generate_ai_pedal_with_mode(
+                model,
+                notes,
+                custom.as_ref(),
+                config.performance_optimization,
+                custom_ai_mode(config),
+            );
+            if !events.is_empty() {
+                return (events, thresholds);
+            }
+        }
+    }
+    (adaptive_fallback(notes), None)
+}
+
+pub fn generate_events(
+    model: Option<&PedalModel>,
+    config: &PlaybackConfig,
+    notes: &[Note],
+    sections: &[MusicalSection],
+) -> (Vec<KeyEvent>, Option<AiThresholds>) {
+    match config.pedal_style.as_str() {
+        "none" => (Vec::new(), None),
+        "rhythmic" => (rhythmic_strategy(sections), None),
+        "harmonic" | "legato" => (harmonic_strategy(sections), None),
+        "ai" => ai_strategy(model, config, notes),
+        "hybrid" => hybrid_strategy(model, config, notes),
+        _ => (Vec::new(), None),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::path::PathBuf;
+
+    fn note(id: i32, pitch: i32, start_time: f64, duration: f64, hand: &str) -> Note {
+        Note {
+            id,
+            pitch,
+            velocity: 64,
+            start_time,
+            duration,
+            hand: hand.to_string(),
+            original_track_index: -1,
+            channel: -1,
+        }
+    }
+
+    fn section(notes: Vec<Note>) -> MusicalSection {
+        let start = notes.iter().map(|n| n.start_time).fold(f64::MAX, f64::min);
+        let end = notes.iter().map(|n| n.end_time()).fold(f64::MIN, f64::max);
+        MusicalSection::new(start, end, notes)
+    }
+
+    mod test_otsu_threshold {
+        use super::*;
+
+        #[test]
+        fn test_empty_input_returns_half() {
+            assert_eq!(otsu_threshold(&[]), 0.5);
+        }
+
+        #[test]
+        fn test_all_out_of_range_returns_half() {
+            assert_eq!(otsu_threshold(&[-1.0, 2.0, 5.0]), 0.5);
+        }
+
+        #[test]
+        fn test_bimodal_distribution_separates_the_two_clusters() {
+            let mut preds: Vec<f32> = Vec::new();
+            for _ in 0..50 {
+                preds.push(0.05);
+            }
+            for _ in 0..50 {
+                preds.push(0.95);
+            }
+            let split = otsu_threshold(&preds);
+            assert!(
+                preds.iter().filter(|&&v| v <= split).all(|&v| v < 0.5),
+                "everything at or below the split should be the low cluster"
+            );
+            assert!(
+                preds.iter().filter(|&&v| v > split).all(|&v| v > 0.5),
+                "everything above the split should be the high cluster"
+            );
+        }
+
+        #[test]
+        fn test_result_within_unit_range() {
+            let preds = vec![0.1, 0.2, 0.5, 0.8, 0.9];
+            let split = otsu_threshold(&preds);
+            assert!((0.0..=1.0).contains(&split));
+        }
+
+        #[test]
+        fn test_uniform_distribution_returns_a_valid_split() {
+            let preds: Vec<f32> = (0..100).map(|i| i as f32 / 100.0).collect();
+            let split = otsu_threshold(&preds);
+            assert!((0.0..=1.0).contains(&split));
+        }
+    }
+
+    mod test_generate_harmonic_pedal {
+        use super::*;
+
+        #[test]
+        fn test_empty_input_produces_no_events() {
+            assert!(generate_harmonic_pedal(&[]).is_empty());
+        }
+
+        #[test]
+        fn test_single_note_quirk_produces_down_up_down_up() {
+            let notes = vec![note(0, 40, 0.0, 1.0, "left")];
+            let events = generate_harmonic_pedal(&notes);
+            let actions: Vec<(&str, &str)> = events
+                .iter()
+                .map(|e| (e.action.as_str(), e.key_char.as_str()))
+                .collect();
+            assert_eq!(
+                actions,
+                vec![
+                    ("pedal", "down"),
+                    ("pedal", "up"),
+                    ("pedal", "down"),
+                    ("pedal", "up"),
+                ]
+            );
+        }
+
+        #[test]
+        fn test_same_pitch_no_gap_sustains_without_further_repedal() {
+            let notes = vec![note(0, 40, 0.0, 0.5, "left"), note(1, 40, 0.5, 0.5, "left")];
+            let events = generate_harmonic_pedal(&notes);
+            let downs = events.iter().filter(|e| e.key_char == "down").count();
+            assert_eq!(
+                downs, 2,
+                "sustained same-pitch notes should not add a repedal beyond the first-note quirk"
+            );
+        }
+
+        #[test]
+        fn test_pitch_change_triggers_repedal() {
+            let notes = vec![note(0, 40, 0.0, 0.2, "left"), note(1, 45, 0.2, 0.2, "left")];
+            let events = generate_harmonic_pedal(&notes);
+            let downs = events.iter().filter(|e| e.key_char == "down").count();
+            assert_eq!(
+                downs, 3,
+                "the first-note quirk contributes 2, the pitch change contributes a 3rd"
+            );
+        }
+
+        #[test]
+        fn test_large_gap_triggers_lift_and_replant() {
+            let notes = vec![note(0, 40, 0.0, 0.2, "left"), note(1, 40, 1.0, 0.2, "left")];
+            let events = generate_harmonic_pedal(&notes);
+            let downs = events.iter().filter(|e| e.key_char == "down").count();
+            assert_eq!(
+                downs, 3,
+                "the first-note quirk contributes 2, the >150ms gap contributes a 3rd"
+            );
+        }
+
+        #[test]
+        fn test_ends_with_up_at_final_note_end_time() {
+            let notes = vec![note(0, 40, 0.0, 2.0, "left")];
+            let events = generate_harmonic_pedal(&notes);
+            let last = events.last().unwrap();
+            assert_eq!(last.key_char, "up");
+            assert!((last.time - 2.0).abs() < 1e-9);
+        }
+    }
+
+    mod test_generate_adaptive_pedal_driver {
+        use super::*;
+
+        #[test]
+        fn test_empty_driver_notes_produces_no_events() {
+            assert!(generate_adaptive_pedal_driver(&[], &[]).is_empty());
+        }
+
+        #[test]
+        fn test_single_note_produces_down_then_up() {
+            let notes = vec![note(0, 40, 0.0, 1.0, "left")];
+            let events = generate_adaptive_pedal_driver(&notes, &notes);
+            assert_eq!(events.len(), 2);
+            assert_eq!(events[0].key_char, "down");
+            assert_eq!(events[1].key_char, "up");
+        }
+
+        #[test]
+        fn test_large_gap_lifts_and_replants() {
+            let notes = vec![note(0, 40, 0.0, 0.1, "left"), note(1, 40, 1.0, 0.1, "left")];
+            let events = generate_adaptive_pedal_driver(&notes, &notes);
+            let downs = events.iter().filter(|e| e.key_char == "down").count();
+            assert_eq!(downs, 2, "gap > 0.35s should lift and replant");
+        }
+
+        #[test]
+        fn test_safe_interval_no_gap_does_not_repedal() {
+            let notes = vec![note(0, 40, 0.0, 0.1, "left"), note(1, 44, 0.1, 0.1, "left")];
+            let events = generate_adaptive_pedal_driver(&notes, &notes);
+            let downs = events.iter().filter(|e| e.key_char == "down").count();
+            assert_eq!(
+                downs, 1,
+                "a safe (major third) interval with no gap should not repedal"
+            );
+        }
+
+        #[test]
+        fn test_linear_semitone_interval_triggers_repedal_with_lag() {
+            let notes = vec![note(0, 40, 0.0, 0.1, "left"), note(1, 41, 0.1, 0.1, "left")];
+            let events = generate_adaptive_pedal_driver(&notes, &notes);
+            let downs: Vec<&KeyEvent> = events.iter().filter(|e| e.key_char == "down").collect();
+            assert_eq!(downs.len(), 2);
+            assert!((downs[1].time - (0.1 + PEDAL_LAG)).abs() < 1e-9);
+        }
+
+        #[test]
+        fn test_linear_tritone_interval_triggers_repedal() {
+            let notes = vec![note(0, 40, 0.0, 0.1, "left"), note(1, 46, 0.1, 0.1, "left")];
+            let events = generate_adaptive_pedal_driver(&notes, &notes);
+            let downs = events.iter().filter(|e| e.key_char == "down").count();
+            assert_eq!(
+                downs, 2,
+                "a tritone (6 semitones) is an unsafe linear interval"
+            );
+        }
+
+        #[test]
+        fn test_vertical_unsafe_interval_triggers_repedal() {
+            let driver = vec![note(0, 40, 0.0, 0.1, "left"), note(1, 44, 0.1, 0.1, "left")];
+            let all_notes = vec![
+                note(0, 40, 0.0, 0.1, "left"),
+                note(1, 44, 0.1, 0.1, "left"),
+                note(2, 45, 0.1, 0.1, "right"),
+            ];
+            let events = generate_adaptive_pedal_driver(&driver, &all_notes);
+            let downs = events.iter().filter(|e| e.key_char == "down").count();
+            assert_eq!(
+                downs, 2,
+                "a concurrent minor-second above the lowest sounding note is an unsafe vertical interval"
+            );
+        }
+
+        #[test]
+        fn test_ends_with_up_at_final_note_end_time() {
+            let notes = vec![note(0, 40, 0.0, 3.0, "left")];
+            let events = generate_adaptive_pedal_driver(&notes, &notes);
+            let last = events.last().unwrap();
+            assert_eq!(last.key_char, "up");
+            assert!((last.time - 3.0).abs() < 1e-9);
+        }
+    }
+
+    mod test_generate_events_dispatch {
+        use super::*;
+
+        fn base_config() -> PlaybackConfig {
+            PlaybackConfig::default()
+        }
+
+        #[test]
+        fn test_none_style_produces_no_events() {
+            let mut cfg = base_config();
+            cfg.pedal_style = "none".to_string();
+            let (events, meta) = generate_events(None, &cfg, &[], &[]);
+            assert!(events.is_empty());
+            assert!(meta.is_none());
+        }
+
+        #[test]
+        fn test_unknown_style_produces_no_events() {
+            let mut cfg = base_config();
+            cfg.pedal_style = "not-a-real-style".to_string();
+            let (events, _) = generate_events(None, &cfg, &[], &[]);
+            assert!(events.is_empty());
+        }
+
+        #[test]
+        fn test_rhythmic_style_groups_left_hand_notes_per_section() {
+            let mut cfg = base_config();
+            cfg.pedal_style = "rhythmic".to_string();
+            let sec = section(vec![
+                note(0, 40, 0.0, 0.2, "left"),
+                note(1, 40, 1.0, 0.2, "left"),
+            ]);
+            let (events, _) = generate_events(None, &cfg, &[], &[sec]);
+            let downs = events.iter().filter(|e| e.key_char == "down").count();
+            assert_eq!(
+                downs, 2,
+                "two separate time groups should yield two down events"
+            );
+        }
+
+        #[test]
+        fn test_rhythmic_falls_back_to_section_span_without_left_hand() {
+            let mut cfg = base_config();
+            cfg.pedal_style = "rhythmic".to_string();
+            let sec = section(vec![note(0, 64, 0.0, 1.0, "right")]);
+            let (events, _) = generate_events(None, &cfg, &[], &[sec]);
+            assert_eq!(events.len(), 2);
+        }
+
+        #[test]
+        fn test_harmonic_and_legato_are_aliases() {
+            let sec_a = section(vec![
+                note(0, 40, 0.0, 0.2, "left"),
+                note(1, 45, 0.2, 0.2, "left"),
+            ]);
+            let sec_b = section(vec![
+                note(0, 40, 0.0, 0.2, "left"),
+                note(1, 45, 0.2, 0.2, "left"),
+            ]);
+
+            let mut cfg_harmonic = base_config();
+            cfg_harmonic.pedal_style = "harmonic".to_string();
+            let mut cfg_legato = base_config();
+            cfg_legato.pedal_style = "legato".to_string();
+
+            let (events_harmonic, _) = generate_events(None, &cfg_harmonic, &[], &[sec_a]);
+            let (events_legato, _) = generate_events(None, &cfg_legato, &[], &[sec_b]);
+            assert_eq!(events_harmonic.len(), events_legato.len());
+        }
+
+        #[test]
+        fn test_ai_style_without_model_falls_back_to_adaptive() {
+            let mut cfg = base_config();
+            cfg.pedal_style = "ai".to_string();
+            let notes = vec![note(0, 40, 0.0, 0.5, "left"), note(1, 42, 0.5, 0.5, "left")];
+            let (events, meta) = generate_events(None, &cfg, &notes, &[]);
+            assert!(!events.is_empty());
+            assert!(meta.is_none());
+        }
+
+        #[test]
+        fn test_hybrid_style_without_model_falls_back_to_adaptive() {
+            let mut cfg = base_config();
+            cfg.pedal_style = "hybrid".to_string();
+            let notes = vec![note(0, 40, 0.0, 0.5, "left"), note(1, 42, 0.5, 0.5, "left")];
+            let (events, meta) = generate_events(None, &cfg, &notes, &[]);
+            assert!(!events.is_empty());
+            assert!(meta.is_none());
+        }
+
+        #[test]
+        fn test_hybrid_style_use_ai_pedal_false_never_needs_a_model() {
+            let mut cfg = base_config();
+            cfg.pedal_style = "hybrid".to_string();
+            cfg.use_ai_pedal = false;
+            let notes = vec![note(0, 40, 0.0, 0.5, "left"), note(1, 42, 0.5, 0.5, "left")];
+            let (events, meta) = generate_events(None, &cfg, &notes, &[]);
+            assert!(!events.is_empty());
+            assert!(meta.is_none());
+        }
+
+        #[test]
+        fn test_ai_and_hybrid_fallback_use_right_hand_when_no_left_hand_notes() {
+            let mut cfg = base_config();
+            cfg.pedal_style = "ai".to_string();
+            let notes = vec![
+                note(0, 64, 0.0, 0.5, "right"),
+                note(1, 66, 0.5, 0.5, "right"),
+            ];
+            let (events, _) = generate_events(None, &cfg, &notes, &[]);
+            assert!(!events.is_empty());
+        }
+    }
+
+    mod test_process_ai_predictions {
+        use super::*;
+
+        #[test]
+        fn test_all_silence_masked_rejects() {
+            let preds = vec![0.9; 20];
+            let notes: Vec<Note> = vec![];
+            let (events, meta) = process_ai_predictions(preds, &notes, 0.4, FPS, None);
+            assert!(events.is_empty());
+            assert!(meta.is_none());
+        }
+
+        #[test]
+        fn test_low_confidence_rejects() {
+            let mut preds = vec![0.0; 20];
+            for p in preds.iter_mut().take(10) {
+                *p = 0.1;
+            }
+            let notes = vec![note(0, 40, 0.0, 0.2, "left")];
+            let (events, meta) = process_ai_predictions(preds, &notes, 0.4, FPS, None);
+            assert!(events.is_empty());
+            assert!(meta.is_none());
+        }
+
+        #[test]
+        fn test_zero_variance_active_region_rejects() {
+            let mut preds = vec![0.0; 20];
+            for p in preds.iter_mut().take(10) {
+                *p = 0.5;
+            }
+            let notes = vec![note(0, 40, 0.0, 0.2, "left")];
+            let (events, meta) = process_ai_predictions(preds, &notes, 0.4, FPS, None);
+            assert!(events.is_empty());
+            assert!(meta.is_none());
+        }
+
+        #[test]
+        fn test_too_few_crossings_rejects() {
+            let mut preds = vec![0.0; 40];
+            for (i, p) in preds.iter_mut().enumerate().take(20) {
+                *p = 0.5 + (i as f32) * 0.01;
+            }
+            let notes = vec![note(0, 40, 0.0, 0.4, "left")];
+            let (events, meta) = process_ai_predictions(preds, &notes, 0.8, FPS, None);
+            assert!(events.is_empty() || events.len() > 2);
+            let _ = meta;
+        }
+
+        #[test]
+        fn test_custom_curves_replace_the_automatic_ones() {
+            let mut preds = vec![0.0; 40];
+            for (i, p) in preds.iter_mut().enumerate().take(30) {
+                *p = 0.2 + (i as f32 % 10.0) * 0.06;
+            }
+            let notes = vec![note(0, 40, 0.0, 0.6, "left")];
+            let custom = ThresholdCurves {
+                on: curve::flat_curve(0.4),
+                off: curve::flat_curve(0.3),
+            };
+            let (_, meta) = process_ai_predictions(preds, &notes, 0.8, FPS, Some(&custom));
+            let m = meta.expect("a custom curve over a swinging confidence must be accepted");
+            assert_eq!(m.curves, custom);
+        }
+
+        #[test]
+        fn test_a_time_varying_custom_curve_is_followed_frame_by_frame() {
+            let mut preds = vec![0.0; 200];
+            for (i, p) in preds.iter_mut().enumerate().take(180) {
+                *p = 0.5 + 0.4 * ((i as f32) * 0.3).sin();
+            }
+            let notes = vec![note(0, 40, 0.0, 3.6, "left")];
+            let custom = ThresholdCurves {
+                on: vec![
+                    curve::ThresholdNode {
+                        time: 0.0,
+                        value: 0.3,
+                    },
+                    curve::ThresholdNode {
+                        time: 4.0,
+                        value: 0.8,
+                    },
+                ],
+                off: vec![
+                    curve::ThresholdNode {
+                        time: 0.0,
+                        value: 0.2,
+                    },
+                    curve::ThresholdNode {
+                        time: 4.0,
+                        value: 0.7,
+                    },
+                ],
+            };
+            let (events, meta) = process_ai_predictions(preds, &notes, 4.0, FPS, Some(&custom));
+            let meta = meta.unwrap();
+            let mut replayed = Vec::new();
+            let mut down = false;
+            for (i, &value) in meta.confidence.iter().enumerate().skip(1) {
+                if value == 0.0 {
+                    continue;
+                }
+                let time = i as f64 / FPS;
+                let (on, off) = meta.curves.at(time).unwrap();
+                if !down && f64::from(value) > on {
+                    down = true;
+                    replayed.push((time, "down"));
+                } else if down && f64::from(value) <= off {
+                    down = false;
+                    replayed.push((time, "up"));
+                }
+            }
+            if down {
+                replayed.push((4.0, "up"));
+            }
+            let produced: Vec<(f64, &str)> = events
+                .iter()
+                .map(|e| (e.time, e.key_char.as_str()))
+                .collect();
+            assert_eq!(replayed, produced);
+        }
+
+        #[test]
+        fn test_custom_off_above_on_is_capped_so_the_pedal_cannot_chatter() {
+            let mut preds = vec![0.0; 100];
+            for (i, p) in preds.iter_mut().enumerate().take(80) {
+                *p = 0.5 + 0.45 * ((i as f32) * 0.3).sin();
+            }
+            let notes = vec![note(0, 40, 0.0, 1.6, "left")];
+            let crossed = ThresholdCurves {
+                on: curve::flat_curve(0.4),
+                off: curve::flat_curve(0.9),
+            };
+            let capped = ThresholdCurves {
+                on: curve::flat_curve(0.4),
+                off: curve::flat_curve(0.4),
+            };
+            let (crossed_events, _) =
+                process_ai_predictions(preds.clone(), &notes, 1.6, FPS, Some(&crossed));
+            let (capped_events, _) = process_ai_predictions(preds, &notes, 1.6, FPS, Some(&capped));
+            let times = |events: &[KeyEvent]| -> Vec<(f64, String)> {
+                events
+                    .iter()
+                    .map(|e| (e.time, e.key_char.clone()))
+                    .collect()
+            };
+            assert_eq!(times(&crossed_events), times(&capped_events));
+        }
+
+        #[test]
+        fn test_a_flat_confidence_is_rejected_even_with_a_custom_curve() {
+            let mut preds = vec![0.0; 20];
+            for p in preds.iter_mut().take(10) {
+                *p = 0.5;
+            }
+            let notes = vec![note(0, 40, 0.0, 0.2, "left")];
+            let custom = ThresholdCurves {
+                on: curve::flat_curve(0.4),
+                off: curve::flat_curve(0.3),
+            };
+            let (events, meta) = process_ai_predictions(preds, &notes, 0.4, FPS, Some(&custom));
+            assert!(events.is_empty());
+            assert!(meta.is_none());
+        }
+
+        #[test]
+        fn test_automatic_curves_are_returned_when_there_is_no_custom_curve() {
+            let mut preds = vec![0.0; 100];
+            for (i, p) in preds.iter_mut().enumerate().take(80) {
+                *p = 0.5 + 0.45 * ((i as f32) * 0.3).sin();
+            }
+            let notes = vec![note(0, 40, 0.0, 1.6, "left")];
+            let (_, meta) = process_ai_predictions(preds, &notes, 1.6, FPS, None);
+            let curves = meta.unwrap().curves;
+            assert!(!curves.on.is_empty());
+            assert_eq!(curves.on.len(), curves.off.len());
+            assert!(curves.is_ordered());
+        }
+
+        #[test]
+        fn test_accepted_result_carries_the_silence_masked_confidence_curve() {
+            let mut preds = vec![0.0; 100];
+            for (i, p) in preds.iter_mut().enumerate().take(80) {
+                let phase = (i as f32) * 0.3;
+                *p = 0.5 + 0.45 * phase.sin();
+            }
+            let notes = vec![note(0, 40, 0.0, 1.0, "left")];
+            let (events, meta) = process_ai_predictions(preds.clone(), &notes, 1.6, FPS, None);
+            assert!(!events.is_empty());
+            let curve = meta.unwrap().confidence;
+            assert_eq!(curve.len(), preds.len());
+            let silent_from = (((1.0 + 0.35) * FPS) as usize).min(preds.len());
+            assert_eq!(&curve[..silent_from], &preds[..silent_from]);
+            assert!(curve[silent_from..].iter().all(|&v| v == 0.0));
+        }
+
+        #[test]
+        fn test_curve_replays_into_the_same_events_with_the_returned_thresholds() {
+            let mut preds = vec![0.0; 100];
+            for (i, p) in preds.iter_mut().enumerate().take(80) {
+                let phase = (i as f32) * 0.3;
+                *p = 0.5 + 0.45 * phase.sin();
+            }
+            let notes = vec![note(0, 40, 0.0, 1.6, "left")];
+            let (_, automatic) = process_ai_predictions(preds.clone(), &notes, 1.6, FPS, None);
+            let curves = automatic.unwrap().curves;
+            let (events, meta) = process_ai_predictions(preds, &notes, 1.6, FPS, Some(&curves));
+            let meta = meta.unwrap();
+            let mut replayed = Vec::new();
+            let mut down = false;
+            for (i, &value) in meta.confidence.iter().enumerate().skip(1) {
+                if value == 0.0 {
+                    continue;
+                }
+                let time = i as f64 / FPS;
+                let (on, off) = meta.curves.at(time).unwrap();
+                if !down && f64::from(value) > on {
+                    down = true;
+                    replayed.push((time, "down"));
+                } else if down && f64::from(value) <= off {
+                    down = false;
+                    replayed.push((time, "up"));
+                }
+            }
+            if down {
+                replayed.push((1.6, "up"));
+            }
+            let produced: Vec<(f64, &str)> = events
+                .iter()
+                .map(|e| (e.time, e.key_char.as_str()))
+                .collect();
+            assert_eq!(replayed, produced);
+        }
+
+        #[test]
+        fn test_accepted_path_produces_well_formed_alternating_events() {
+            let mut preds = vec![0.0; 100];
+            for (i, p) in preds.iter_mut().enumerate().take(80) {
+                let phase = (i as f32) * 0.3;
+                *p = 0.5 + 0.45 * phase.sin();
+            }
+            let notes = vec![note(0, 40, 0.0, 1.6, "left")];
+            let (events, meta) = process_ai_predictions(preds, &notes, 1.6, FPS, None);
+            if !events.is_empty() {
+                assert!(meta.is_some());
+                assert!(events.len() > 2);
+                let mut pedal_down = false;
+                for e in &events {
+                    if e.key_char == "down" {
+                        assert!(!pedal_down, "two downs in a row without an up");
+                        pedal_down = true;
+                    } else if e.key_char == "up" {
+                        assert!(pedal_down, "an up without a preceding down");
+                        pedal_down = false;
+                    }
+                }
+            }
+        }
+    }
+
+    mod test_resolve_custom_curves {
+        use super::*;
+
+        #[test]
+        fn test_empty_config_curves_mean_automatic() {
+            assert!(resolve_custom_curves(&PlaybackConfig::default()).is_none());
+        }
+
+        #[test]
+        fn test_one_empty_curve_means_automatic() {
+            let mut cfg = PlaybackConfig::default();
+            cfg.pedal_ai_mode = "custom".into();
+            cfg.pedal_curve_on = curve::flat_curve(0.5);
+            assert!(resolve_custom_curves(&cfg).is_none());
+        }
+
+        #[test]
+        fn test_both_curves_are_used_and_cleaned() {
+            let mut cfg = PlaybackConfig::default();
+            cfg.pedal_ai_mode = "custom".into();
+            cfg.pedal_curve_on = vec![
+                curve::ThresholdNode {
+                    time: 4.0,
+                    value: 1.4,
+                },
+                curve::ThresholdNode {
+                    time: 1.0,
+                    value: 0.5,
+                },
+            ];
+            cfg.pedal_curve_off = curve::flat_curve(0.3);
+            let resolved = resolve_custom_curves(&cfg).unwrap();
+            assert_eq!(resolved.on[0].time, 1.0);
+            assert_eq!(resolved.on[1].value, 1.0);
+        }
+    }
+
+    mod test_build_input_features {
+        use super::*;
+        const MIDDLE_C: i32 = 60;
+        const TEST_STEPS: usize = 160;
+        const HALF_SECOND: f64 = 0.5;
+        const ONE_SECOND: f64 = 1.0;
+
+        fn frame_at(seconds: f64) -> usize {
+            (seconds * FPS) as usize
+        }
+
+        fn pitch_flag(features: &[f32], frame: usize, pitch: i32) -> f32 {
+            features[frame * FEATURES + pitch as usize]
+        }
+
+        fn chroma_value(features: &[f32], frame: usize, pitch: i32) -> f32 {
+            features[frame * FEATURES + PITCHES + pitch as usize % PITCH_CLASSES]
+        }
+
+        #[test]
+        fn test_a_held_note_sets_only_its_start_frame() {
+            let notes = vec![note(0, MIDDLE_C, HALF_SECOND, ONE_SECOND, "left")];
+            let features = build_input_features(&notes, FPS, TEST_STEPS);
+            let start = frame_at(HALF_SECOND);
+            assert_eq!(pitch_flag(&features, start - 1, MIDDLE_C), 0.0);
+            assert_eq!(pitch_flag(&features, start, MIDDLE_C), 1.0);
+            for t in start + 1..TEST_STEPS {
+                assert_eq!(pitch_flag(&features, t, MIDDLE_C), 0.0, "frame {t}");
+            }
+        }
+
+        #[test]
+        fn test_chroma_counts_only_the_start_frame() {
+            let notes = vec![note(0, MIDDLE_C, 0.0, ONE_SECOND, "left")];
+            let features = build_input_features(&notes, FPS, TEST_STEPS);
+            assert_eq!(chroma_value(&features, 0, MIDDLE_C), 1.0);
+            for t in 1..frame_at(ONE_SECOND) {
+                assert_eq!(chroma_value(&features, t, MIDDLE_C), 0.0, "frame {t}");
+            }
+        }
+
+        #[test]
+        fn test_back_to_back_same_pitch_notes_give_one_start() {
+            let notes = vec![
+                note(0, MIDDLE_C, 0.0, HALF_SECOND, "left"),
+                note(1, MIDDLE_C, HALF_SECOND, HALF_SECOND, "left"),
+            ];
+            let features = build_input_features(&notes, FPS, TEST_STEPS);
+            assert_eq!(pitch_flag(&features, 0, MIDDLE_C), 1.0);
+            assert_eq!(pitch_flag(&features, frame_at(HALF_SECOND), MIDDLE_C), 0.0);
+        }
+
+        #[test]
+        fn test_same_pitch_repeated_after_a_gap_gives_two_starts() {
+            let notes = vec![
+                note(0, MIDDLE_C, 0.0, HALF_SECOND, "left"),
+                note(1, MIDDLE_C, ONE_SECOND, HALF_SECOND, "left"),
+            ];
+            let features = build_input_features(&notes, FPS, TEST_STEPS);
+            assert_eq!(pitch_flag(&features, 0, MIDDLE_C), 1.0);
+            assert_eq!(pitch_flag(&features, frame_at(HALF_SECOND), MIDDLE_C), 0.0);
+            assert_eq!(pitch_flag(&features, frame_at(ONE_SECOND), MIDDLE_C), 1.0);
+        }
+
+        #[test]
+        fn test_feature_width_matches_features_constant() {
+            let notes = vec![note(0, 60, 0.0, 0.5, "left")];
+            let total_steps = 10;
+            let features = build_input_features(&notes, FPS, total_steps);
+            assert_eq!(features.len(), total_steps * FEATURES);
+        }
+
+        #[test]
+        fn test_active_frame_has_pitch_one_hot_set() {
+            let notes = vec![note(0, 60, 0.0, 0.5, "left")];
+            let total_steps = 30;
+            let features = build_input_features(&notes, FPS, total_steps);
+            assert_eq!(features[0 * FEATURES + 60], 1.0);
+        }
+
+        #[test]
+        fn test_chroma_sums_pitch_classes_across_octaves() {
+            let notes = vec![note(0, 60, 0.0, 1.0, "left"), note(1, 72, 0.0, 1.0, "left")];
+            let total_steps = 10;
+            let features = build_input_features(&notes, FPS, total_steps);
+            let chroma_0 = features[0 * FEATURES + 128];
+            assert_eq!(chroma_0, 2.0, "pitches 60 and 72 are both pitch-class 0");
+        }
+
+        #[test]
+        fn test_out_of_range_pitch_is_skipped_not_panicking() {
+            let notes = vec![note(0, 200, 0.0, 0.5, "left")];
+            let total_steps = 10;
+            let features = build_input_features(&notes, FPS, total_steps);
+            assert!(features.iter().all(|&v| v == 0.0));
+        }
+    }
+
+    mod test_ai_pedal_real_model_integration {
+        use super::*;
+
+        fn model_path() -> PathBuf {
+            PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                .join("resources")
+                .join("pedal_bilstm.safetensors")
+        }
+
+        #[test]
+        fn test_generate_ai_pedal_does_not_panic_on_real_model() {
+            let model = PedalModel::load(model_path()).expect("real pedal model should load");
+            let notes = vec![
+                note(0, 60, 0.0, 0.5, "left"),
+                note(1, 62, 0.5, 0.5, "left"),
+                note(2, 64, 1.0, 0.5, "left"),
+                note(3, 65, 1.5, 0.5, "left"),
+                note(4, 67, 2.0, 0.5, "left"),
+            ];
+            let (events, meta) = generate_ai_pedal(&model, &notes, None);
+            if events.is_empty() {
+                assert!(meta.is_none());
+            } else {
+                assert!(meta.is_some());
+                assert!(events.len() > 2);
+            }
+        }
+
+        #[test]
+        fn test_generate_events_ai_style_with_real_model_does_not_panic() {
+            let model = PedalModel::load(model_path()).expect("real pedal model should load");
+            let mut cfg = PlaybackConfig::default();
+            cfg.pedal_style = "ai".to_string();
+            let notes = vec![
+                note(0, 55, 0.0, 0.3, "left"),
+                note(1, 57, 0.3, 0.3, "left"),
+                note(2, 59, 0.6, 0.3, "left"),
+            ];
+            let (events, _) = generate_events(Some(&model), &cfg, &notes, &[]);
+            assert!(
+                !events.is_empty(),
+                "ai style must always produce events, either AI or adaptive fallback"
+            );
+        }
+    }
+}
+
+/// Disk confidence is reusable only after the caller verifies identical note input settings.
+pub fn events_from_confidence(
+    config: &PlaybackConfig,
+    notes: &[Note],
+    confidence: &[f32],
+) -> Option<(Vec<KeyEvent>, Option<AiThresholds>)> {
+    if config.pedal_style != "ai" || config.use_midi_pedal || notes.is_empty() {
+        return None;
+    }
+    let max_time = notes.iter().map(|n| n.end_time()).fold(0.0, f64::max);
+    let steps = (max_time * FPS).ceil() as usize + 1;
+    if confidence.len() != steps
+        || confidence
+            .iter()
+            .any(|v| !v.is_finite() || *v < 0.0 || *v > 1.0)
+    {
+        return None;
+    }
+    let custom = resolve_custom_curves(config);
+    let (events, meta) = process_ai_predictions_with_mode(
+        confidence.to_vec(),
+        notes,
+        max_time,
+        FPS,
+        custom.as_ref(),
+        custom_ai_mode(config),
+    );
+    if events.is_empty() {
+        Some((adaptive_fallback(notes), None))
+    } else {
+        Some((events, meta))
+    }
+}

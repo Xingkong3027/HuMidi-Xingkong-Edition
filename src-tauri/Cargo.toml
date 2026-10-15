@@ -1,0 +1,53 @@
+[package]
+name = "humidi-tauri"
+version = "2.1.2-xk.12"
+description = "HuMidi Xingkong Edition — MIDI piano autoplayer"
+authors = ["smyGitt", "Xingkong3027"]
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[lib]
+# The `_lib` suffix may seem redundant but it is necessary
+# to make the lib name unique and wouldn't conflict with the bin name.
+# This seems to be only an issue on Windows, see https://github.com/rust-lang/cargo/issues/8519
+name = "humidi_tauri_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = ["macos-private-api"] }
+tauri-plugin-opener = "2"
+tauri-plugin-dialog = "2"
+tauri-plugin-global-shortcut = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = { version = "1", features = ["float_roundtrip"] }
+candle-core = "0.11"
+enigo = { version = "0.6", features = ["libei_tokio"] }
+midly = "0.5"
+dirs = "6"
+rand = "0.9"
+chrono = { version = "0.4", default-features = false, features = ["clock"] }
+rdev = "0.5"
+reqwest = { version = "0.13", default-features = false, features = ["json", "rustls-no-provider"] }
+rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"] }
+zip = { version = "2", default-features = false, features = ["deflate"] }
+encoding_rs = "0.8"
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_UI_WindowsAndMessaging", "Win32_System_LibraryLoader", "Win32_System_Threading"] }
+
+[dev-dependencies]
+approx = "0.5"
+tempfile = "3"
+tauri = { version = "2", features = ["test"] }
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = true
+

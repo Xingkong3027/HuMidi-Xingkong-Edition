@@ -1,34 +1,40 @@
-# Changelog
+# 更新记录
 
-All notable Xingkong Edition changes are documented here. The detailed
-development history remains available in `CHANGELOG_PLAYLIST_EDITION.md`.
+公开发行记录与此前本地修订。旧版本及其标签保留。
 
-## 2.0.0-xk.1 — Preview
+## 2.1.2-xk.12 — 2026-10-15
 
-### Added
+- 歌单页增加 Ctrl+A / Command+A，选择整个歌库（含搜索隐藏项），与全选按钮一致。
+- 输入框、可编辑文本、弹窗和原生文件选择器内保留原有快捷键行为；离开歌单页后移除监听。
+- 明确全选范围，更新中英文使用、迁移、构建、验证与第三方说明。
+- 改用 Windows x64 单文件构建流程，手动发布流程先创建草稿，修正星空版标签校验。
 
-- Simplified Chinese and English runtime language switching.
-- Advanced local playlists with five playback modes.
-- Normal and self-contained `.humidiplaylist` import/export.
-- Editable playlist songs, retained MIDI sources, deterministic caches, and
-  dynamic/fixed/custom random seeds.
-- Multi-file MIDI import, batch playlist operations, text-sheet playlist
-  support, expanded shortcuts, and media-key handling.
-- Optional dense-MIDI performance optimization using the original `pynput`
-  input backend.
-- Explicit repair flow for selected malformed MIDI data-byte errors.
+## 2.1.2-xk.11 — 本地修订
 
-### Changed
+- 修复旧歌单缺失/null 踏板曲线导致后台处理后无法播放、命令提示 `invalid type: null, expected a sequence` 的问题。
+- 兼容此前已经导入并保存了 null 曲线的歌曲；有效自定义曲线继续保留。
+- 后台状态使用固定占位，整批结束后清空，避免歌单列表跳动。
+- 核验旧完整包、新普通包、新完整包与直接 MIDI 导入的演奏结果，详见 `docs/VALIDATION.md`。
+- 当前通过“全选”按钮选择歌曲；Ctrl+A 歌曲全选尚未实现。
 
-- Product identity is now `HuMidi: Xingkong Edition`.
-- Application configuration is isolated under `~/.humidi-xingkong`.
-- Update checks target the Xingkong Edition release page and never install an
-  executable automatically.
-- Release tags use `v2.0.0-xk.N` to avoid confusion with upstream HuMidi tags.
+## 2.1.2-xk.10 — 本地修订
 
-### Security and distribution
+- 正确识别旧 Python 百分比速度与 Rust 倍率，避免 100% 被当作 100 倍。
+- 写明速度单位，避免导出后再次导入重复转换。
+- 明确区分导入歌单文件与读取本地歌库文件夹。
 
-- Added attribution, third-party notices, a security policy, and preserved
-  license texts.
-- Release automation generates SHA-256 checksums for downloadable binaries.
+## 2.1.2-xk.9 — 本地修订
 
+- 修复完整 MIDI 尾部零填充被前置校验误判为截断文件头的问题。
+- 保留真正非法通道数据的逐曲修复确认，并修正相关 running status 校验。
+- 兼容旧歌单单文件及本地歌库迁移。
+
+## 2.1.2 合并与此前本地修订
+
+- 在 Rust / Tauri / React 架构中保留星空版歌单、语言、裁剪、模拟演奏、快捷键、图标和可选性能优化。
+- 整合上游 2.1.2 的 PedalAI 权重、起音特征、自动峰值策略、启动释放踏板选项及窗口内快捷键补偿。
+- 数据使用独立的 `.humidi-xingkong-v2` 目录。
+
+## 2.0.0-xk.1 — 已有公开版本
+
+Python 架构的星空版。历史说明和发行文件参见 [v2.0.0-xk.1 Release](https://github.com/Xingkong3027/HuMidi-Xingkong-Edition/releases/tag/v2.0.0-xk.1)。

@@ -1,41 +1,31 @@
-name: CI
-
+name: Windows CI
 on:
   push:
     branches: [main]
   pull_request:
     branches: [main]
-
+  workflow_dispatch:
 permissions:
   contents: read
-
 jobs:
   test:
-    name: Test on ${{ matrix.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-latest, windows-latest]
-    runs-on: ${{ matrix.os }}
-
+    runs-on: windows-latest
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Set up Python 3.11
-        uses: actions/setup-python@v5
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
         with:
-          python-version: "3.11"
-          cache: pip
-
-      - name: Install dependencies
-        run: python -m pip install -r requirements.txt
-
-      - name: Run Ruff
-        run: python -m ruff check .
-
-      - name: Compile Python source
-        run: python -m compileall -q .
-
-      - name: Run unit tests
-        run: python -m unittest discover -s tests -v
+          node-version: '24'
+          cache: npm
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+      - name: Check application versions
+        run: python qa/check-release-version.py
+      - run: npm ci --no-audit --no-fund
+      - run: npm test
+      - run: npm run build
+      - run: cargo test --manifest-path src-tauri/Cargo.toml --locked

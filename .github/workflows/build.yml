@@ -1,0 +1,25 @@
+name: Build Windows artifact
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  portable:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-pc-windows-msvc
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+      - shell: powershell
+        run: .\build-portable.ps1
+      - uses: actions/upload-artifact@v4
+        with:
+          name: HuMidi-Xingkong-Windows-x64
+          path: portable/*

@@ -1,102 +1,15 @@
-# Publishing HuMidi: Xingkong Edition
+# 发布方法
 
-This checklist assumes the GitHub fork has been renamed to
-`Xingkong3027/HuMidi-Xingkong-Edition`.
+当前工程为 Rust / Tauri 2 / React，发布目标是 Windows x64 单文件 EXE。旧 Python 版本保留在 Git 历史和 v2.0.0-xk.1 标签中。
 
-## 1. Clone the fork and configure upstream
+1. 同步 package.json、package-lock.json 根包、Cargo.toml、Cargo.lock 应用包、tauri.conf.json 及界面版本文字；更新 CHANGELOG 和 RELEASE_NOTES。
+2. 运行 `python qa/check-release-version.py`，再运行 BUILDING.md 中的完整检查及 build-portable.ps1。私人样本测试的环境变量见 docs/VALIDATION.md。
+3. 运行 `python qa/collect-licenses.py`，核对依赖许可清单与原文。更新依赖后如果发现缺失文本，应从其准确版本的原仓库补齐 LICENSES/upstream 记录。
+4. 审查提交，排除本机路径、私人 MIDI/歌单和构建缓存。正式标签指向最终构建源码；旧标签不重写。
+5. 运行 GitHub 的 Prepare Windows Release，输入已存在的 `v<应用版本>` 标签。流程在该标签上测试、构建 EXE、整理声明与校验和，并创建草稿；不会自动公开，也不会覆盖已有 Release。
+6. 也可上传同一提交在本机构建的 EXE、许可证包、源码 ZIP 与 SHA256SUMS 到网页 Release 草稿。核对文件名、版本、提交和校验和后发布。
+7. 发布后检查下载和应用更新入口。应用使用 /releases/latest，草稿和预发布不通过该接口提供给自动检查；正式版本可设为 Latest。
 
-```powershell
-git clone https://github.com/Xingkong3027/HuMidi-Xingkong-Edition.git
-cd HuMidi-Xingkong-Edition
-git remote add upstream https://github.com/smyGitt/HuMidi-Roblox-Piano-Autoplayer.git
-git remote -v
-```
+Windows CI 对主分支和 PR 运行固定回归。Build Windows artifact 仅生成手动下载的构建产物，不创建测试 Release。GitHub Actions 的实际运行结果应在 Actions 页面查看，不能用本地通过替代。
 
-`origin` must point to the Xingkong repository and `upstream` to the original
-HuMidi repository.
-
-## 2. Import this source tree
-
-Copy the contents of this package into the cloned repository. Preserve the
-clone's `.git` directory. Do not commit `.venv`, `build`, `dist`, caches, local
-MIDI files, playlists, or saved user configuration.
-
-Create a release branch:
-
-```powershell
-git switch -c release/xingkong-2.0.0-xk.1
-```
-
-## 3. Test locally
-
-```powershell
-py -3.11 -m venv .venv
-.\.venv\Scripts\python.exe -m pip install --upgrade pip
-.\.venv\Scripts\python.exe -m pip install -r requirements.txt
-.\.venv\Scripts\python.exe -m ruff check .
-.\.venv\Scripts\python.exe -m compileall -q .
-.\.venv\Scripts\python.exe -m unittest discover -s tests -v
-.\.venv\Scripts\python.exe main.py
-```
-
-Complete the relevant items in `MANUAL_TEST_CHECKLIST.md`, including a real
-Windows and Roblox input smoke test.
-
-## 4. Commit and merge
-
-```powershell
-git status
-git diff
-git add -A
-git diff --cached --check
-git commit -m "feat: add HuMidi Xingkong Edition 2.0.0-xk.1"
-git push -u origin release/xingkong-2.0.0-xk.1
-```
-
-Open a pull request from the release branch into `main`. Confirm that both CI
-jobs pass, review the changed files, and then merge the pull request.
-
-## 5. Create the release tag
-
-The tag without its leading `v` must exactly match `APP_VERSION` in `main.py`.
-
-```powershell
-git switch main
-git pull --ff-only origin main
-git tag -a v2.0.0-xk.1 -m "HuMidi Xingkong Edition v2.0.0-xk.1"
-git push origin v2.0.0-xk.1
-```
-
-Pushing the tag starts `.github/workflows/release.yml`. It runs tests, builds
-Windows and macOS packages, creates SHA-256 checksums, and publishes a GitHub
-prerelease. The workflow-dispatch option can rebuild only an existing tag.
-
-## 6. Review the generated prerelease
-
-Verify that the Release contains:
-
-- `HuMidi-Xingkong-Edition.exe`;
-- `HuMidi-Xingkong-Edition-Windows.zip` with license notices;
-- the macOS tar and DMG packages;
-- `SHA256SUMS.txt`;
-- attribution and license files;
-- GitHub-generated source archives.
-
-Download the generated Windows package on a clean Windows machine, verify its
-SHA-256 checksum, and repeat the manual smoke tests. Keep the first release
-marked as a prerelease until target-system tests are complete.
-
-## 7. Future upstream synchronization
-
-Do not use GitHub's automatic “Sync fork” button without reviewing conflicts;
-this edition intentionally changes the product name, configuration directory,
-updater, UI, and release workflow.
-
-```powershell
-git fetch upstream
-git switch -c sync/upstream-review
-git merge upstream/main
-```
-
-Resolve and test the merge in the review branch before merging it into `main`.
-
+公开包不附带私人歌曲。第三方游戏的真实接收、声音和调度效果需单独实机验证；最新范围见 docs/VALIDATION.md 和 MANUAL_TEST_CHECKLIST.md。

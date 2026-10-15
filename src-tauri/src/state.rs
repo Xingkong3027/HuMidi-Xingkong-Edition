@@ -1,0 +1,86 @@
+use crate::core::midi::TempoMap;
+use crate::core::models::{KeyEvent, MidiTrack, Note};
+use crate::core::pedal::model::PedalModel;
+use crate::managers::config_manager::ConfigManager;
+use crate::managers::hotkey_manager::HotkeyManager;
+use crate::managers::injected_echo::InjectedEchoes;
+use crate::managers::theme_manager::ThemeManager;
+use std::sync::mpsc::Sender;
+use std::sync::{Arc, Mutex};
+use std::thread::JoinHandle;
+
+#[derive(Default)]
+pub struct PlaybackSession {
+    pub final_notes: Option<Vec<Note>>,
+    pub humanized_notes: Option<Vec<Note>>,
+    pub played_notes: Option<Vec<Note>>,
+    pub note_events: Option<Vec<KeyEvent>>,
+    pub pedal_events: Option<Vec<KeyEvent>>,
+    pub merged_events: Option<Vec<KeyEvent>>,
+    pub tempo_map: Option<TempoMap>,
+    pub total_dur: f64,
+    pub pedal_confidence: Vec<f32>,
+    pub midi_pedal_events: Vec<(f64, bool)>,
+    pub notes_config_snapshot: Option<serde_json::Value>,
+    pub pedal_config_snapshot: Option<serde_json::Value>,
+}
+
+pub enum PlaybackCommand {
+    TogglePause,
+    Stop,
+    Seek(f64),
+    Shutdown,
+}
+
+pub struct PlaybackHandle {
+    pub cmd_tx: Sender<PlaybackCommand>,
+    pub thread: JoinHandle<()>,
+    pub cancel: Arc<std::sync::atomic::AtomicBool>,
+}
+
+pub struct AppState {
+    pub pedal_model: Mutex<Option<Arc<PedalModel>>>,
+    pub parsed_tracks: Mutex<Option<Vec<MidiTrack>>>,
+    pub parsed_tempo_map: Mutex<Option<TempoMap>>,
+    pub loaded_pedal_count: Mutex<u32>,
+    pub midi_pedal_events: Mutex<Vec<(f64, bool)>>,
+    pub playback_session: Mutex<PlaybackSession>,
+    pub playback_handle: Mutex<Option<PlaybackHandle>>,
+    pub hotkey_manager: Mutex<HotkeyManager>,
+    pub shortcuts: Mutex<crate::managers::shortcuts::ShortcutManager>,
+    pub injected_echoes: Arc<InjectedEchoes>,
+    pub key_delivery: crate::managers::key_delivery::KeyDelivery,
+    pub config_manager: Mutex<ConfigManager>,
+    pub app_config: Mutex<serde_json::Value>,
+    pub theme_manager: Mutex<ThemeManager>,
+}
+
+impl Default for AppState {
+    fn default() -> Self {
+        Self::from_config_manager(ConfigManager::new())
+    }
+}
+impl AppState {
+    pub fn from_config_manager(mut config_manager: ConfigManager) -> Self {
+        let app_config = config_manager.load();
+        let mut hotkey_manager = HotkeyManager::new();
+        hotkey_manager.restore_from_config(&app_config);
+        let shortcuts = crate::managers::shortcuts::ShortcutManager::from_config(&app_config);
+        AppState {
+            pedal_model: Mutex::new(None),
+            parsed_tracks: Mutex::new(None),
+            parsed_tempo_map: Mutex::new(None),
+            loaded_pedal_count: Mutex::new(0),
+            midi_pedal_events: Mutex::new(Vec::new()),
+            playback_session: Mutex::new(PlaybackSession::default()),
+            playback_handle: Mutex::new(None),
+            hotkey_manager: Mutex::new(hotkey_manager),
+            shortcuts: Mutex::new(shortcuts),
+            injected_echoes: Arc::new(InjectedEchoes::new()),
+            key_delivery: crate::managers::key_delivery::KeyDelivery::default(),
+            config_manager: Mutex::new(config_manager),
+            app_config: Mutex::new(app_config),
+            theme_manager: Mutex::new(ThemeManager::new()),
+        }
+    }
+}

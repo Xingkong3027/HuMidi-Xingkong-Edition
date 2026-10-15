@@ -1,0 +1,25 @@
+const { fixture,chromium }=require('./layout-smoke.cjs');
+const assert=require('assert'),fs=require('fs'),path=require('path');
+const out=process.env.HUMIDI_QA_OUTPUT||path.resolve(__dirname,'../qa-output');fs.mkdirSync(out,{recursive:true});
+(async()=>{
+ const browser=await chromium.launch({channel:'msedge',headless:true});const results=[];
+ for(const [width,height,font]of[[860,640,16],[1180,780,12],[860,640,24]]){
+  const context=await browser.newContext({viewport:{width,height},locale:'zh-CN'});await context.addInitScript(fixture);const page=await context.newPage();const errors=[],native=[];
+  page.on('pageerror',e=>errors.push(String(e)));page.on('dialog',async d=>{native.push(d.type());await d.dismiss();});
+  await page.goto('http://127.0.0.1:1420/');await page.getByText('全局默认设置 · 自动保存，仅用于之后新导入的曲目。').waitFor();await page.evaluate(f=>document.documentElement.style.setProperty('--font-size',f+'px'),font);
+  await page.evaluate(async()=>{const api=await import('/src/lib/appDialogs.ts');window.__answer=api.ask('确定删除选中的曲目？',{title:'删除歌曲',okLabel:'删除'});});
+  await page.getByRole('dialog',{name:'删除歌曲'}).waitFor();
+  const before=await page.evaluate(()=>window.__calls.filter(c=>c.cmd==='start_playback').length);await page.evaluate(()=>window.dispatchEvent(new Event('xingkong-play-request',{cancelable:true})));assert.equal(await page.evaluate(()=>window.__calls.filter(c=>c.cmd==='start_playback').length),before,'modal did not block playback');
+  await page.screenshot({path:path.join(out,`xk4-确认-${width}.png`)});await page.getByRole('button',{name:'取消',exact:true}).click();assert.equal(await page.evaluate(()=>window.__answer),false);
+  await page.evaluate(async()=>{const api=await import('/src/lib/appDialogs.ts');window.__answer=api.promptText('输入新的名称','原曲目');});await page.getByRole('textbox',{name:'重命名',exact:true}).fill('新的中文曲名');await page.getByRole('button',{name:'确定',exact:true}).click();assert.equal(await page.evaluate(()=>window.__answer),'新的中文曲名');
+  await page.evaluate(async()=>{const api=await import('/src/lib/appDialogs.ts');window.__answer=api.chooseColor('#123456');});await page.getByRole('textbox',{name:'颜色值',exact:true}).fill('bad');assert(await page.getByRole('button',{name:'确定',exact:true}).isDisabled());await page.getByRole('button',{name:'#3b82f6',exact:true}).click();await page.screenshot({path:path.join(out,`xk4-颜色-${width}.png`)});await page.getByRole('button',{name:'确定',exact:true}).click();assert.equal(await page.evaluate(()=>window.__answer),'#3b82f6');
+  await page.evaluate(async()=>{const old=window.__TAURI_INTERNALS__.invoke;window.__TAURI_INTERNALS__.invoke=(cmd,args)=>cmd==='plugin:dialog|save'?new Promise(resolve=>{window.__releaseNative=resolve;}):old(cmd,args);const api=await import('/src/lib/appDialogs.ts');window.__answer=api.save({defaultPath:'backup.json',filters:[{name:'JSON',extensions:['json']}]});});
+  assert.equal(await page.getByRole('dialog').count(),0,'custom file picker appeared');
+  const previous=await page.evaluate(()=>window.__calls.filter(c=>c.cmd==='start_playback').length);await page.evaluate(()=>window.dispatchEvent(new Event('xingkong-play-request',{cancelable:true})));assert.equal(await page.evaluate(()=>window.__calls.filter(c=>c.cmd==='start_playback').length),previous,'native chooser did not block playback');
+  await page.evaluate(()=>window.__releaseNative('/new/backup.json'));assert.equal(await page.evaluate(()=>window.__answer),'/new/backup.json');
+  await page.evaluate(async()=>{const api=await import('/src/lib/appDialogs.ts');window.__answer=api.save();});await page.evaluate(()=>window.__releaseNative(null));assert.equal(await page.evaluate(()=>window.__answer),null);
+  await page.locator('.sidebar').getByRole('button',{name:'关于',exact:true}).click();await page.mouse.move(width-35,140);await page.waitForTimeout(250);const tabs=page.locator('.tab-page__tabs').first();await tabs.waitFor();const box=await tabs.boundingBox();assert(box);const buttons=await tabs.locator('button').all();for(const b of buttons){const r=await b.boundingBox();assert(r&&r.x>=box.x-1&&r.x+r.width<=box.x+box.width+1&&r.y+r.height<=box.y+box.height+2,'tab is clipped');}assert(await tabs.evaluate(e=>getComputedStyle(e).overflowX==='visible'&&getComputedStyle(e).overflowY==='visible'));if(font===24)assert(await tabs.evaluate(e=>new Set([...e.querySelectorAll('button')].map(b=>Math.round(b.getBoundingClientRect().y))).size)>1,'long tabs failed to wrap');await page.screenshot({path:path.join(out,`xk4-标签换行-${width}-${font}px.png`)});
+  assert.equal(errors.length,0,errors.join('\n'));assert.equal(native.length,0,'native dialog appeared');results.push({width,height,font,checks:['confirmation','rename','color','native-save','native-cancel','modal-blocks-play','wrapped-tabs'],native,errors});await context.close();
+ }
+ await browser.close();fs.writeFileSync(path.join(out,'xk5-dialog-verification.json'),JSON.stringify(results,null,2));console.log(JSON.stringify({layouts:results.length,checks:results.reduce((n,r)=>n+r.checks.length,0),nativeDialogs:0}));
+})().catch(e=>{console.error(e);process.exit(1)});
