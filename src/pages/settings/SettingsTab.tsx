@@ -81,6 +81,12 @@ function DisplayPage() {
       </Card>
       <Card title={t("窗口")}>
         <div className="control-row">
+          <div>
+            <ToggleSwitch checked={settings.pauseOnAppFocus} onChange={settings.setPauseOnAppFocus} label={t("本窗口获得焦点时暂停演奏")} />
+            <p className="page-placeholder__hint">{t("默认开启。倒计时结束后仍在本窗口也会暂停；切回游戏后用播放快捷键继续。关闭后进度继续，本窗口不接收演奏按键。")}</p>
+          </div>
+        </div>
+        <div className="control-row">
           <ToggleSwitch
             checked={settings.alwaysOnTop}
             onChange={settings.setAlwaysOnTop}

@@ -2,7 +2,7 @@
 
 [English](README.md) · [下载](https://github.com/Xingkong3027/HuMidi-Xingkong-Edition/releases) · [更新记录](CHANGELOG.md)
 
-当前版本：**2.1.2-xk.12**，基于 [HuMidi 2.1.2](https://github.com/smyGitt/HuMidi-Roblox-Piano-Autoplayer) 的 Rust / Tauri 2 / React 架构。星空版保留高级歌单、中文界面、每首歌曲独立设置、裁剪、模拟演奏策略、扩展快捷键与可选的密集 MIDI 性能优化。
+当前版本：**2.1.2-xk.13**，基于 [HuMidi 2.1.2](https://github.com/smyGitt/HuMidi-Roblox-Piano-Autoplayer) 的 Rust / Tauri 2 / React 架构。星空版保留高级歌单、中文界面、每首歌曲独立设置、裁剪、模拟演奏策略、扩展快捷键与可选的密集 MIDI 性能优化。
 
 这是非官方分支，由 Xingkong3027 维护；原项目作者为 smyGitt。
 
@@ -32,6 +32,8 @@
 xk.11 修复了旧歌曲缺失踏板曲线时后台处理写入 `null`、随后无法播放的问题，也能兼容已经受影响的歌曲。后台处理提示保持固定占位，避免歌单列表反复上下跳动。
 
 ## 演奏与兼容性
+
+设置 → 显示 → 窗口中的“本窗口获得焦点时暂停演奏”默认开启；倒计时后仍在本窗口也会暂停。切回游戏后使用播放快捷键继续。关闭后进度继续，但演奏按键不会输入到本程序控件。
 
 密集 MIDI 性能优化默认关闭，并按歌曲保存；额外加速路径需要主动开启。关闭该选项不代表星空版所有导入规则、模拟演奏、缓存与停止处理都与上游逐字节相同。上游算法基准、测试范围和例外见[验证说明](docs/VALIDATION.md)。
 

@@ -13,6 +13,7 @@ import { isTauri, loadAppConfig, saveAppConfig, onEvent } from "../lib/tauri";
 import { useLog } from "./LogContext";
 
 interface AppSettings {
+  pauseOnAppFocus: boolean;
   alwaysOnTop: boolean;
   opacity: number;
   showTimeline: boolean;
@@ -27,6 +28,7 @@ interface AppSettings {
 }
 
 interface AppSettingsContextValue extends AppSettings {
+  setPauseOnAppFocus: (v: boolean) => void;
   setAlwaysOnTop: (v: boolean) => void;
   setOpacity: (v: number) => void;
   setShowTimeline: (v: boolean) => void;
@@ -62,6 +64,7 @@ function applyAlwaysOnTop(value: boolean, report: (message: string) => void) {
 }
 
 const DEFAULTS: AppSettings = {
+  pauseOnAppFocus: true,
   alwaysOnTop: false,
   opacity: 100,
   showTimeline: true,
@@ -82,6 +85,7 @@ export function AppSettingsProvider({ children }: { children: ReactNode }) {
   const appendLogRef = useRef(appendLog);
   appendLogRef.current = appendLog;
   const [alwaysOnTop, setAlwaysOnTopState] = useState(DEFAULTS.alwaysOnTop);
+  const [pauseOnAppFocus, setPauseOnAppFocusState] = useState(DEFAULTS.pauseOnAppFocus);
   const [opacity, setOpacityState] = useState(DEFAULTS.opacity);
   const [showTimeline, setShowTimelineState] = useState(DEFAULTS.showTimeline);
   const [showPiano, setShowPianoState] = useState(DEFAULTS.showPiano);
@@ -128,6 +132,7 @@ export function AppSettingsProvider({ children }: { children: ReactNode }) {
     if (!isTauri()) return;
     loadAppConfig()
       .then((cfg) => {
+        if (typeof cfg.pause_on_app_focus === "boolean") setPauseOnAppFocusState(cfg.pause_on_app_focus);
         if (typeof cfg.always_on_top === "boolean") {
           setAlwaysOnTopState(cfg.always_on_top);
           if (cfg.always_on_top) applyAlwaysOnTop(true, appendLogRef.current);
@@ -166,6 +171,11 @@ export function AppSettingsProvider({ children }: { children: ReactNode }) {
     if (!isTauri()) return;
     void saveAppConfig({ always_on_top: v });
     applyAlwaysOnTop(v, appendLog);
+  }
+
+  function setPauseOnAppFocus(v: boolean) {
+    setPauseOnAppFocusState(v);
+    if (isTauri()) void saveAppConfig({ pause_on_app_focus: v });
   }
 
   function setOpacity(v: number) {
@@ -230,6 +240,8 @@ export function AppSettingsProvider({ children }: { children: ReactNode }) {
 
   const value = useMemo(
     () => ({
+      pauseOnAppFocus,
+      setPauseOnAppFocus,
       alwaysOnTop,
       opacity,
       showTimeline,
@@ -258,6 +270,7 @@ export function AppSettingsProvider({ children }: { children: ReactNode }) {
       dismissUpdateAvailable,
     }),
     [
+      pauseOnAppFocus,
       alwaysOnTop,
       opacity,
       showTimeline,

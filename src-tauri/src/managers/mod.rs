@@ -6,3 +6,4 @@ pub mod keyboard_listener;
 pub mod shortcuts;
 pub mod theme_manager;
 pub mod update_manager;
+pub mod window_focus;

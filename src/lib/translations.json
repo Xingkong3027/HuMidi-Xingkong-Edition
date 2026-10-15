@@ -249,5 +249,8 @@
   "Enable automatically checking for update when you start the application?": "是否在程序启动时自动检查更新？",
   "NOTE: You can change this setting whenever you want in the settings.": "可以随时在设置页修改此选项。",
   "Nah": "暂不启用",
-  "Sure": "启用"
+  "Sure": "启用",
+  "Pause playback when this window has focus": "本窗口获得焦点时暂停演奏",
+  "Enabled by default. Playback also pauses if this window is still focused after the countdown. Switch to the game and use the playback shortcut to resume. When disabled, playback time continues but performance keys are not sent to this window.": "默认开启。倒计时结束后仍在本窗口也会暂停；切回游戏后用播放快捷键继续。关闭后进度继续，本窗口不接收演奏按键。",
+  "Playback paused because HuMidi has keyboard focus. Switch to the target window and resume with the playback shortcut.": "HuMidi 窗口获得焦点，演奏已暂停。切换到目标窗口后，用播放快捷键继续。"
 }

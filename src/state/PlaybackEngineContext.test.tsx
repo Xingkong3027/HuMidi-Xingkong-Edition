@@ -1131,6 +1131,23 @@ describe("PlaybackEngineContext (Tauri mode, isTauri() = true)", () => {
     expect(tauriMocks.seekPlayback).not.toHaveBeenCalled();
   });
 
+  it("focus pause retains the current position when resumed instead of seeking to the song start", async () => {
+    tauriMocks.togglePause.mockResolvedValue(undefined);
+    const { result } = renderEngine();
+    await waitFor(() => expect(eventHandlers.has("focus_paused")).toBe(true));
+    await act(async () => {
+      eventHandlers.get("playback_started")?.(null);
+      eventHandlers.get("progress_updated")?.(3.5);
+      eventHandlers.get("focus_paused")?.(null);
+    });
+    expect(result.current.engine.isPlaying).toBe(true);
+    expect(result.current.engine.isPaused).toBe(true);
+    await act(async () => result.current.engine.togglePause());
+    expect(tauriMocks.seekPlayback).not.toHaveBeenCalled();
+    expect(tauriMocks.togglePause).toHaveBeenCalledTimes(1);
+    expect(result.current.engine.isPaused).toBe(false);
+  });
+
   it("stop calls the real command and resets the playback clock to the start", async () => {
     tauriMocks.stopPlayback.mockResolvedValue(undefined);
     const { result } = renderEngine();

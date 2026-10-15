@@ -15,6 +15,7 @@ pub enum PlayerEvent {
     Visualizer(Vec<i32>),
     Pedal(bool),
     AutoPaused,
+    FocusPaused,
     Error(String),
     Section(usize),
 }

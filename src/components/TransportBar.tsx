@@ -152,7 +152,11 @@ export function TransportBar({
           )}
         </div>
 
-        <div className="transport-bar__controls">
+        <div className="transport-bar__controls" onClickCapture={(event) => {
+          // Mouse activation must not leave a transport button armed for pedal Space.
+          // Keyboard activation (detail === 0) retains normal accessible focus.
+          if (event.detail > 0 && event.target instanceof Element) event.target.closest<HTMLButtonElement>("button")?.blur();
+        }}>
           <Button
             variant="icon"
             subtle

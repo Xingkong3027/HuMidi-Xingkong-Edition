@@ -44,6 +44,7 @@ describe("AppSettingsContext (preview mode, isTauri() = false)", () => {
   it("starts at documented defaults and never touches the backend", () => {
     const { result } = renderHook(() => useAppSettings(), { wrapper });
     expect(result.current.alwaysOnTop).toBe(false);
+    expect(result.current.pauseOnAppFocus).toBe(true);
     expect(result.current.opacity).toBe(100);
     expect(result.current.showTimeline).toBe(true);
     expect(result.current.showPiano).toBe(true);
@@ -71,6 +72,15 @@ describe("AppSettingsContext (preview mode, isTauri() = false)", () => {
 describe("AppSettingsContext (Tauri mode, isTauri() = true)", () => {
   beforeEach(() => {
     tauriMocks.isTauri.mockReturnValue(true);
+  });
+
+  it("loads and persists the global window-focus playback policy", async () => {
+    tauriMocks.loadAppConfig.mockResolvedValue({ pause_on_app_focus: false, auto_check_updates: false });
+    const { result } = renderHook(() => useAppSettings(), { wrapper });
+    await waitFor(() => expect(result.current.pauseOnAppFocus).toBe(false));
+    await act(async () => result.current.setPauseOnAppFocus(true));
+    expect(result.current.pauseOnAppFocus).toBe(true);
+    expect(tauriMocks.saveAppConfig).toHaveBeenCalledWith({ pause_on_app_focus: true });
   });
 
   it("hydrates every field from load_app_config on mount", async () => {

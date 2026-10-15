@@ -662,18 +662,31 @@ fn event_to_channel_payload(event: &PlayerEvent) -> (&'static str, serde_json::V
         PlayerEvent::Visualizer(v) => ("visualizer_updated", serde_json::json!(v)),
         PlayerEvent::Pedal(b) => ("pedal_updated", serde_json::json!(b)),
         PlayerEvent::AutoPaused => ("auto_paused", serde_json::Value::Null),
+        PlayerEvent::FocusPaused => ("focus_paused", serde_json::Value::Null),
         PlayerEvent::Error(e) => ("error_occurred", serde_json::json!(e)),
         PlayerEvent::Section(idx) => ("section_changed", serde_json::json!(idx)),
     }
 }
 
 pub fn run_playback_loop(
+    engine: PlaybackEngine,
+    driver: &mut dyn KeyboardDriver,
+    cmd_rx: &mpsc::Receiver<PlaybackCommand>,
+    emit: impl FnMut(&PlayerEvent),
+    now_fn: impl FnMut() -> f64,
+    sleep_fn: impl FnMut(f64),
+) {
+    run_playback_loop_with_focus(engine, driver, cmd_rx, emit, now_fn, sleep_fn, || false);
+}
+
+pub fn run_playback_loop_with_focus(
     mut engine: PlaybackEngine,
     driver: &mut dyn KeyboardDriver,
     cmd_rx: &mpsc::Receiver<PlaybackCommand>,
     mut emit: impl FnMut(&PlayerEvent),
     mut now_fn: impl FnMut() -> f64,
     mut sleep_fn: impl FnMut(f64),
+    mut should_pause_for_focus: impl FnMut() -> bool,
 ) {
     let performance_enabled = engine.performance_optimization();
     let mut performance = crate::core::performance::PerformanceSession::new(false);
@@ -710,6 +723,11 @@ pub fn run_playback_loop(
     let mut natural_finished_pending = false;
 
     loop {
+        if !engine.is_paused() && should_pause_for_focus() {
+            for ev in engine.toggle_pause(now_fn()) { emit(&ev); }
+            emit(&PlayerEvent::FocusPaused);
+            emit(&PlayerEvent::Status("Playback paused because HuMidi has keyboard focus. Switch to the target window and resume with the playback shortcut.".into()));
+        }
         performance.set_enabled(performance_enabled && !engine.is_paused());
         let outcome = engine.tick(driver, now_fn());
         let natural_ending = outcome.events.contains(&PlayerEvent::Finished);
@@ -810,9 +828,13 @@ fn start_playback_blocking<R: tauri::Runtime>(
         (merged_events, total_dur)
     };
 
-    let mut driver = EchoTrackingDriver::new(
+    let tracked_driver = EchoTrackingDriver::new(
         EnigoDriver::new_with_mode(config.performance_optimization).map_err(|e| e.to_string())?,
         Arc::clone(&state.injected_echoes),
+    );
+    let focus_app = app.clone();
+    let mut driver = crate::managers::window_focus::FocusedInputDriver::new(
+        tracked_driver, move || crate::managers::window_focus::app_has_focus(&focus_app),
     );
     let cancel = Arc::new(std::sync::atomic::AtomicBool::new(false));
     let mut engine = PlaybackEngine::new(config, Vec::new());
@@ -825,7 +847,7 @@ fn start_playback_blocking<R: tauri::Runtime>(
 
     let thread = std::thread::spawn(move || {
         let start_instant = Instant::now();
-        run_playback_loop(
+        run_playback_loop_with_focus(
             engine,
             &mut driver,
             &cmd_rx,
@@ -838,6 +860,12 @@ fn start_playback_blocking<R: tauri::Runtime>(
                 if secs > 0.0 {
                     std::thread::sleep(Duration::from_secs_f64(secs));
                 }
+            },
+            || {
+                crate::managers::window_focus::app_has_focus(&app_for_thread)
+                    && app_for_thread.state::<AppState>().app_config.lock()
+                        .map(|config| crate::managers::window_focus::pause_on_focus(&config))
+                        .unwrap_or(true)
             },
         );
     });

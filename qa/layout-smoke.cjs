@@ -43,7 +43,7 @@ function fixture(){
   }
   if(cmd==='get_custom_themes')return [];
   if(cmd==='get_active_theme_name')return 'Midnight';
-  if(cmd==='plugin:app|version')return '2.1.2-xk.12';
+  if(cmd==='plugin:app|version')return '2.1.2-xk.13';
   if(cmd==='get_save_dir')return '/saves';
   if(cmd.includes('inner_size')||cmd.includes('outer_size'))return {width:860,height:640};
   if(cmd==='plugin:window|scale_factor')return 1;

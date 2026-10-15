@@ -317,6 +317,10 @@ export function PlaybackEngineProvider({ children }: { children: ReactNode }) {
         atEndRef.current = true;
         setIsPaused(true);
       }),
+      onEvent("focus_paused", () => {
+        atEndRef.current = false;
+        setIsPaused(true);
+      }),
       onEvent("error_occurred", (msg) => appendLog(`Error: ${msg}`)),
       onEvent("playback_started", () => {
         atEndRef.current = false;
