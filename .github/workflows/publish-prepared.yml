@@ -40,9 +40,6 @@ jobs:
         with:
           python-version: '3.12'
       - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: src-tauri
       - name: Verify and import prepared source
         shell: pwsh
         run: |
@@ -66,7 +63,7 @@ jobs:
           if (!(Test-Path -LiteralPath (Join-Path $prepared 'package.json'))) { throw 'Unexpected source archive layout' }
           # Workflows must first be reviewed and committed through the logged-in maintainer UI.
           # The automatic repository token does not replace workflow definitions.
-          Get-ChildItem -LiteralPath (Join-Path $prepared '.github/workflows') -File | ForEach-Object {
+          Get-ChildItem -LiteralPath (Join-Path $prepared '.github/workflows') -File -Force | ForEach-Object {
             $existing = Join-Path $env:GITHUB_WORKSPACE ".github/workflows/$($_.Name)"
             if (!(Test-Path -LiteralPath $existing) -or (Get-FileHash -LiteralPath $existing).Hash -ne (Get-FileHash -LiteralPath $_.FullName).Hash) { throw "Commit matching workflow first: $($_.Name)" }
           }
@@ -78,7 +75,7 @@ jobs:
               Remove-Item -LiteralPath $target -Force
             }
           }
-          Get-ChildItem -LiteralPath $prepared -Recurse -File | ForEach-Object {
+          Get-ChildItem -LiteralPath $prepared -Recurse -File -Force | ForEach-Object {
             $relative = [IO.Path]::GetRelativePath($prepared, $_.FullName)
             if (!$relative.Replace('\','/').StartsWith('.github/workflows/')) {
               $target = Join-Path $workspace $relative
@@ -87,6 +84,9 @@ jobs:
             }
           }
           "PREPARED_STAGE=$stage" >> $env:GITHUB_ENV
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
       - name: Verify application version
         run: python qa/check-release-version.py
       - run: npm ci --no-audit --no-fund
