@@ -1,0 +1,126 @@
+name: Publish prepared Windows release
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Draft release tag (v2.1.2-xk.12)'
+        required: true
+        type: string
+      source_sha256:
+        description: 'SHA256 of the prepared Source.zip'
+        required: true
+        type: string
+      exe_sha256:
+        description: 'SHA256 of the prepared Windows x64 EXE'
+        required: true
+        type: string
+permissions:
+  contents: write
+concurrency:
+  group: publish-prepared
+  cancel-in-progress: false
+jobs:
+  publish:
+    runs-on: windows-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      RELEASE_TAG: ${{ inputs.tag }}
+      SOURCE_SHA256: ${{ inputs.source_sha256 }}
+      EXE_SHA256: ${{ inputs.exe_sha256 }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+      - name: Verify and import prepared source
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          if ($env:RELEASE_TAG -notmatch '^v[0-9]+\.[0-9]+\.[0-9]+-xk\.[0-9]+$') { throw 'Invalid Xingkong release tag' }
+          if ($env:SOURCE_SHA256 -notmatch '^[a-f0-9]{64}$' -or $env:EXE_SHA256 -notmatch '^[a-f0-9]{64}$') { throw 'Invalid SHA256' }
+          $version = $env:RELEASE_TAG.Substring(1)
+          $release = gh release view "$env:RELEASE_TAG" --json isDraft | ConvertFrom-Json
+          if ($LASTEXITCODE -ne 0 -or !$release.isDraft) { throw 'Only a draft release can be published by this workflow' }
+          $stage = Join-Path $env:RUNNER_TEMP 'prepared-humidi-release'
+          New-Item -ItemType Directory -Path $stage -Force | Out-Null
+          gh release download "$env:RELEASE_TAG" --dir "$stage"
+          if ($LASTEXITCODE -ne 0) { throw 'Could not download the draft assets' }
+          $sourceZip = Join-Path $stage "HuMidi-Xingkong-Edition-$version-Source.zip"
+          $exe = Join-Path $stage "HuMidi-Xingkong-Edition-$version-Windows-x64.exe"
+          if ((Get-FileHash -LiteralPath $sourceZip -Algorithm SHA256).Hash.ToLowerInvariant() -ne $env:SOURCE_SHA256) { throw 'Source archive hash mismatch' }
+          if ((Get-FileHash -LiteralPath $exe -Algorithm SHA256).Hash.ToLowerInvariant() -ne $env:EXE_SHA256) { throw 'EXE hash mismatch' }
+          $extract = Join-Path $stage 'source'
+          Expand-Archive -LiteralPath $sourceZip -DestinationPath $extract
+          $prepared = Join-Path $extract "HuMidi-Xingkong-Edition-$version"
+          if (!(Test-Path -LiteralPath (Join-Path $prepared 'package.json'))) { throw 'Unexpected source archive layout' }
+          # Workflows must first be reviewed and committed through the logged-in maintainer UI.
+          # The automatic repository token does not replace workflow definitions.
+          Get-ChildItem -LiteralPath (Join-Path $prepared '.github/workflows') -File | ForEach-Object {
+            $existing = Join-Path $env:GITHUB_WORKSPACE ".github/workflows/$($_.Name)"
+            if (!(Test-Path -LiteralPath $existing) -or (Get-FileHash -LiteralPath $existing).Hash -ne (Get-FileHash -LiteralPath $_.FullName).Hash) { throw "Commit matching workflow first: $($_.Name)" }
+          }
+          $workspace = [IO.Path]::GetFullPath($env:GITHUB_WORKSPACE)
+          git ls-files | ForEach-Object {
+            if (!$_.StartsWith('.github/workflows/')) {
+              $target = [IO.Path]::GetFullPath((Join-Path $workspace $_))
+              if (!$target.StartsWith($workspace + [IO.Path]::DirectorySeparatorChar)) { throw 'File outside repository' }
+              Remove-Item -LiteralPath $target -Force
+            }
+          }
+          Get-ChildItem -LiteralPath $prepared -Recurse -File | ForEach-Object {
+            $relative = [IO.Path]::GetRelativePath($prepared, $_.FullName)
+            if (!$relative.Replace('\','/').StartsWith('.github/workflows/')) {
+              $target = Join-Path $workspace $relative
+              New-Item -ItemType Directory -Path (Split-Path $target) -Force | Out-Null
+              Copy-Item -LiteralPath $_.FullName -Destination $target -Force
+            }
+          }
+          "PREPARED_STAGE=$stage" >> $env:GITHUB_ENV
+      - name: Verify application version
+        run: python qa/check-release-version.py
+      - run: npm ci --no-audit --no-fund
+      - run: npm test
+      - run: npm run build
+      - run: cargo test --manifest-path src-tauri/Cargo.toml --locked
+      - name: Commit, tag and publish verified assets
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $version = $env:RELEASE_TAG.Substring(1)
+          if ((Get-Content -Raw package.json | ConvertFrom-Json).version -ne $version) { throw 'Draft tag does not match source' }
+          $release = gh release view "$env:RELEASE_TAG" --json isDraft | ConvertFrom-Json
+          if ($LASTEXITCODE -ne 0 -or !$release.isDraft) { throw 'Release is no longer a draft' }
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git config core.autocrlf false
+          git add -A
+          git commit -m "Release HuMidi Xingkong Edition $version"
+          if ($LASTEXITCODE -ne 0) { throw 'No prepared source commit was created' }
+          git tag -a "$env:RELEASE_TAG" -m "HuMidi Xingkong Edition $version"
+          if ($LASTEXITCODE -ne 0) { throw 'Release tag already exists or could not be created' }
+          python qa/check-release-version.py "$env:RELEASE_TAG"
+          if ($LASTEXITCODE -ne 0) { throw 'Final tag verification failed' }
+          git push --atomic origin HEAD:main "$env:RELEASE_TAG"
+          if ($LASTEXITCODE -ne 0) { throw 'Source or tag push failed; release remains a draft' }
+          $sourceZip = Join-Path $env:PREPARED_STAGE "HuMidi-Xingkong-Edition-$version-Source.zip"
+          git archive --format=zip "--prefix=HuMidi-Xingkong-Edition-$version/" --output "$sourceZip" HEAD
+          if ($LASTEXITCODE -ne 0) { throw 'Final source archive failed' }
+          $checksum = Join-Path $env:PREPARED_STAGE 'SHA256SUMS.txt'
+          Get-ChildItem -LiteralPath $env:PREPARED_STAGE -File | Where-Object { $_.Extension -in '.exe','.zip' } | Sort-Object Name | ForEach-Object { "$((Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant())  $($_.Name)" } | Set-Content -Encoding ascii $checksum
+          gh release upload "$env:RELEASE_TAG" "$sourceZip" "$checksum" --clobber
+          if ($LASTEXITCODE -ne 0) { throw 'Final asset upload failed; release remains a draft' }
+          gh release edit "$env:RELEASE_TAG" --draft=false --latest --notes-file RELEASE_NOTES.md
+          if ($LASTEXITCODE -ne 0) { throw 'Release publication failed' }
+          $commit = git rev-parse HEAD
+          "Published $env:RELEASE_TAG at $commit" >> $env:GITHUB_STEP_SUMMARY
