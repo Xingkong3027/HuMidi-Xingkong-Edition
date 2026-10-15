@@ -4,6 +4,8 @@
 
 ## 中文
 
+- 界面修正：全局设置中的五个开关与文字靠左，与说明文字对齐。
+
 - 演奏页改为“独立设置 / 模拟人演奏 / 全局设置”三个标签；独立页明确显示新曲目默认值或正在编辑的曲目。
 - 调试输出、开始时释放踏板、曲终暂停改为全局设置；原程序设置的自动切换 Roblox 和焦点暂停也迁入这里。
 - 曲终暂停改名“单曲试听结束后停留在曲尾”，歌单仍按播放模式继续。
@@ -14,6 +16,8 @@
 前端 524 项、后端 931 项及原 MIDI/真实 88 首旧包补充回归通过。真实 Roblox 窗口切换、收键和长时间挂机未实机验证。
 
 ## English
+
+- Layout correction: left-align all five global switches and labels with their explanatory text.
 
 Local test build; not published to GitHub.
 
@@ -26,4 +30,4 @@ Local test build; not published to GitHub.
 
 524 frontend and 931 backend tests plus private MIDI/real 88-song package regressions passed. Real Roblox activation, input reception and overnight playback remain unverified.
 
-EXE SHA256: `82351e8d92282d95adc29bab81de826616a7c61dcd100f9d790bab823b624a1e`
+EXE SHA256: `09bab5c2742c81c77d64dc61e0b396f6f5da6eb5afbf38804f2005743b15668e`
