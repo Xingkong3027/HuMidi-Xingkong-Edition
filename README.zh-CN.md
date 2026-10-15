@@ -5,9 +5,7 @@
 [![Release](https://img.shields.io/github/v/release/Xingkong3027/HuMidi-Xingkong-Edition?display_name=tag)](https://github.com/Xingkong3027/HuMidi-Xingkong-Edition/releases)
 [![CI](https://github.com/Xingkong3027/HuMidi-Xingkong-Edition/actions/workflows/ci.yml/badge.svg)](https://github.com/Xingkong3027/HuMidi-Xingkong-Edition/actions/workflows/ci.yml)
 
-**本地测试版：2.1.2-xk.15 · Windows x64 单文件 EXE**
-
-本版尚未发布到 GitHub；Releases 的最新正式版仍是 xk.14。下列 xk.15 附件由本地交付提供。
+**当前版本：2.1.2-xk.15 · Windows x64 单文件 EXE**
 
 星空版是基于 [smyGitt/HuMidi-Roblox-Piano-Autoplayer](https://github.com/smyGitt/HuMidi-Roblox-Piano-Autoplayer) 的非官方分支，用于将 MIDI 和 Virtual Piano 文本曲谱转换为虚拟钢琴键盘输入。当前版本基于上游 **2.1.2 的 Rust / Tauri 2 / React 架构**，延续旧星空版的高级歌单、中文界面、逐曲设置、裁剪、随机种子与扩展快捷键，并整合新版 PedalAI。
 
@@ -39,7 +37,7 @@
 | 附件 | 用途 |
 | --- | --- |
 | `HuMidi-Xingkong-Edition-2.1.2-xk.15-Windows-x64.exe` | 直接运行的 Windows x64 单文件程序。 |
-| `HuMidi-Xingkong-Edition-2.1.2-xk.15-Source.zip` | 此本地版本对应的完整源码，用于阅读、修改和自行构建。 |
+| `HuMidi-Xingkong-Edition-2.1.2-xk.15-Source.zip` | 与发行标签对应的完整源码，用于阅读、修改和自行构建。 |
 | `HuMidi-Xingkong-Edition-2.1.2-xk.15-Licenses.zip` | 软件、依赖及模型相关声明和许可证文本。 |
 | `SHA256SUMS.txt`、`*.exe.sha256` | 检查附件完整性的 SHA-256 校验值。 |
 

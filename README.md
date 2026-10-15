@@ -5,9 +5,7 @@
 [![Release](https://img.shields.io/github/v/release/Xingkong3027/HuMidi-Xingkong-Edition?display_name=tag)](https://github.com/Xingkong3027/HuMidi-Xingkong-Edition/releases)
 [![CI](https://github.com/Xingkong3027/HuMidi-Xingkong-Edition/actions/workflows/ci.yml/badge.svg)](https://github.com/Xingkong3027/HuMidi-Xingkong-Edition/actions/workflows/ci.yml)
 
-**Local test version: 2.1.2-xk.15 · Windows x64 portable EXE**
-
-This version has not been published to GitHub. Releases still offers xk.14 as the latest public release; the xk.15 assets below are delivered locally.
+**Current release: 2.1.2-xk.15 · Windows x64 portable EXE**
 
 Xingkong Edition is an unofficial fork of [smyGitt/HuMidi-Roblox-Piano-Autoplayer](https://github.com/smyGitt/HuMidi-Roblox-Piano-Autoplayer) that turns MIDI files and Virtual Piano text sheets into virtual-piano keyboard input. It uses **upstream 2.1.2's Rust / Tauri 2 / React architecture**, carrying forward the Python fork's advanced playlists, localization, per-song settings, trimming, seed policies and extended shortcuts, alongside the newer PedalAI integration.
 
@@ -39,7 +37,7 @@ Download from [this repository's Releases](https://github.com/Xingkong3027/HuMid
 | Asset | Purpose |
 | --- | --- |
 | `HuMidi-Xingkong-Edition-2.1.2-xk.15-Windows-x64.exe` | Portable Windows x64 application; run directly. |
-| `HuMidi-Xingkong-Edition-2.1.2-xk.15-Source.zip` | Complete source snapshot for this local version, for review, modification and rebuilding. |
+| `HuMidi-Xingkong-Edition-2.1.2-xk.15-Source.zip` | Complete source snapshot matching the release tag, for review, modification and rebuilding. |
 | `HuMidi-Xingkong-Edition-2.1.2-xk.15-Licenses.zip` | Application, dependency and model notices and license texts. |
 | `SHA256SUMS.txt`, `*.exe.sha256` | SHA-256 checksums for download integrity. |
 
