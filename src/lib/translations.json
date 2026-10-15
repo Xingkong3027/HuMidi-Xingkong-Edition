@@ -252,5 +252,12 @@
   "Sure": "启用",
   "Pause playback when this window has focus": "本窗口获得焦点时暂停演奏",
   "Enabled by default. Playback also pauses if this window is still focused after the countdown. Switch to the game and use the playback shortcut to resume. When disabled, playback time continues but performance keys are not sent to this window.": "默认开启。倒计时结束后仍在本窗口也会暂停；切回游戏后用播放快捷键继续。关闭后进度继续，本窗口不接收演奏按键。",
-  "Playback paused because HuMidi has keyboard focus. Switch to the target window and resume with the playback shortcut.": "HuMidi 窗口获得焦点，演奏已暂停。切换到目标窗口后，用播放快捷键继续。"
+  "Playback paused because HuMidi has keyboard focus. Switch to the target window and resume with the playback shortcut.": "HuMidi 窗口获得焦点，演奏已暂停。切换到目标窗口后，用播放快捷键继续。",
+  "Automatically focus the Roblox window when playing": "播放时自动切换到 Roblox 窗口",
+  "Disabled by default. After the countdown, try once when starting or manually resuming. If no game window is found or focus cannot be switched, pause and explain why. Focus is not repeatedly taken back during playback.": "默认关闭。开始演奏或手动继续时，在倒计时后尝试切换一次；找不到游戏窗口或切换失败则暂停并提示。演奏中不会反复抢回焦点。",
+  "Disabled by default. At playback start, finish automatic window activation before checking whether this window has focus. Returning to this window during playback still pauses it when enabled. When disabled, time continues but performance keys are not sent here.": "默认关闭。开启后，开始演奏会先完成自动切换，再检查本窗口是否有焦点；演奏中主动切回本窗口仍会暂停。关闭后进度继续，本窗口不接收演奏按键。",
+  "No Roblox game window was found. Playback is paused. Open Roblox and use the playback shortcut to retry.": "未找到 Roblox 游戏窗口，演奏已暂停。打开 Roblox 后用播放快捷键重试。",
+  "Windows did not switch focus to Roblox. Playback is paused. Focus the game manually and use the playback shortcut to retry.": "Windows 未能将焦点切换到 Roblox，演奏已暂停。请手动切换到游戏后用播放快捷键重试。",
+  "Automatic Roblox window focus is only supported on Windows. Playback is paused.": "自动切换 Roblox 窗口目前仅支持 Windows，演奏已暂停。",
+  "Automatic window activation could not be completed": "自动切换窗口未完成"
 }

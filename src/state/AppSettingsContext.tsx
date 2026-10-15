@@ -13,6 +13,7 @@ import { isTauri, loadAppConfig, saveAppConfig, onEvent } from "../lib/tauri";
 import { useLog } from "./LogContext";
 
 interface AppSettings {
+  autoFocusRoblox: boolean;
   pauseOnAppFocus: boolean;
   alwaysOnTop: boolean;
   opacity: number;
@@ -28,6 +29,7 @@ interface AppSettings {
 }
 
 interface AppSettingsContextValue extends AppSettings {
+  setAutoFocusRoblox: (v: boolean) => void;
   setPauseOnAppFocus: (v: boolean) => void;
   setAlwaysOnTop: (v: boolean) => void;
   setOpacity: (v: number) => void;
@@ -64,7 +66,8 @@ function applyAlwaysOnTop(value: boolean, report: (message: string) => void) {
 }
 
 const DEFAULTS: AppSettings = {
-  pauseOnAppFocus: true,
+  pauseOnAppFocus: false,
+  autoFocusRoblox: false,
   alwaysOnTop: false,
   opacity: 100,
   showTimeline: true,
@@ -86,6 +89,7 @@ export function AppSettingsProvider({ children }: { children: ReactNode }) {
   appendLogRef.current = appendLog;
   const [alwaysOnTop, setAlwaysOnTopState] = useState(DEFAULTS.alwaysOnTop);
   const [pauseOnAppFocus, setPauseOnAppFocusState] = useState(DEFAULTS.pauseOnAppFocus);
+  const [autoFocusRoblox, setAutoFocusRobloxState] = useState(DEFAULTS.autoFocusRoblox);
   const [opacity, setOpacityState] = useState(DEFAULTS.opacity);
   const [showTimeline, setShowTimelineState] = useState(DEFAULTS.showTimeline);
   const [showPiano, setShowPianoState] = useState(DEFAULTS.showPiano);
@@ -132,6 +136,7 @@ export function AppSettingsProvider({ children }: { children: ReactNode }) {
     if (!isTauri()) return;
     loadAppConfig()
       .then((cfg) => {
+        if (typeof cfg.auto_focus_roblox === "boolean") setAutoFocusRobloxState(cfg.auto_focus_roblox);
         if (typeof cfg.pause_on_app_focus === "boolean") setPauseOnAppFocusState(cfg.pause_on_app_focus);
         if (typeof cfg.always_on_top === "boolean") {
           setAlwaysOnTopState(cfg.always_on_top);
@@ -176,6 +181,11 @@ export function AppSettingsProvider({ children }: { children: ReactNode }) {
   function setPauseOnAppFocus(v: boolean) {
     setPauseOnAppFocusState(v);
     if (isTauri()) void saveAppConfig({ pause_on_app_focus: v });
+  }
+
+  function setAutoFocusRoblox(v: boolean) {
+    setAutoFocusRobloxState(v);
+    if (isTauri()) void saveAppConfig({ auto_focus_roblox: v });
   }
 
   function setOpacity(v: number) {
@@ -240,6 +250,8 @@ export function AppSettingsProvider({ children }: { children: ReactNode }) {
 
   const value = useMemo(
     () => ({
+      autoFocusRoblox,
+      setAutoFocusRoblox,
       pauseOnAppFocus,
       setPauseOnAppFocus,
       alwaysOnTop,
@@ -270,6 +282,7 @@ export function AppSettingsProvider({ children }: { children: ReactNode }) {
       dismissUpdateAvailable,
     }),
     [
+      autoFocusRoblox,
       pauseOnAppFocus,
       alwaysOnTop,
       opacity,

@@ -2,7 +2,7 @@
 
 [简体中文](README.zh-CN.md) · [Downloads](https://github.com/Xingkong3027/HuMidi-Xingkong-Edition/releases) · [Changelog](CHANGELOG.md)
 
-Current version: **2.1.2-xk.13**, based on [HuMidi 2.1.2](https://github.com/smyGitt/HuMidi-Roblox-Piano-Autoplayer), using Rust, Tauri 2 and React. This unofficial fork is maintained by Xingkong3027. Original HuMidi is by smyGitt.
+Current version: **2.1.2-xk.14**, based on [HuMidi 2.1.2](https://github.com/smyGitt/HuMidi-Roblox-Piano-Autoplayer), using Rust, Tauri 2 and React. This unofficial fork is maintained by Xingkong3027. Original HuMidi is by smyGitt.
 
 Features include an advanced playlist, Chinese and English UI, per-song settings, trimming, humanization with repeatable seed options, extended shortcuts, and optional dense-MIDI optimizations. Upstream 2.1.2's PedalAI model, onset features and automatic peak strategy are integrated.
 
@@ -22,7 +22,7 @@ Version xk.11 fixes missing/null pedal curves that could prevent legacy songs fr
 
 ## Selection and playback
 
-Settings → Display → Window includes “Pause playback when this window has focus”, enabled by default. After switching back to the target, resume with the playback shortcut. Disabling it keeps playback time running while performance keys are suppressed in this application's own window.
+Settings → Display → Window includes automatic Roblox window activation and pause-on-app-focus, both disabled by default. Saved choices are preserved. With both enabled, activation is confirmed after the countdown before focus-pause is evaluated. Returning to HuMidi during playback can still pause; manual resume retries activation. Missing windows or rejected activation pause playback with an explanation. Performance keys are always suppressed in HuMidi's own window.
 
 The bottom-right **Select all** button selects the entire library, including songs hidden by search. **Ctrl+A (Command+A) selects songs on the playlist page.** Text inputs retain normal text selection; dialogs and native file choosers do not change song selection. Ctrl and Shift support multi-selection and range selection.
 

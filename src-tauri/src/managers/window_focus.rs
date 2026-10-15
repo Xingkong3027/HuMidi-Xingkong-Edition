@@ -7,7 +7,139 @@ pub fn pause_on_focus(config: &serde_json::Value) -> bool {
     config
         .get("pause_on_app_focus")
         .and_then(|v| v.as_bool())
-        .unwrap_or(true)
+        .unwrap_or(false)
+}
+
+pub fn auto_focus_roblox(config: &serde_json::Value) -> bool {
+    config
+        .get("auto_focus_roblox")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false)
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ActivationResult {
+    Disabled,
+    Focused,
+    NotFound,
+    Denied,
+    Unsupported,
+    Cancelled,
+}
+
+impl ActivationResult {
+    pub fn failure_message(self) -> Option<&'static str> {
+        match self {
+            Self::NotFound => Some("No Roblox game window was found. Playback is paused. Open Roblox and use the playback shortcut to retry."),
+            Self::Denied => Some("Windows did not switch focus to Roblox. Playback is paused. Focus the game manually and use the playback shortcut to retry."),
+            Self::Unsupported => Some("Automatic Roblox window focus is only supported on Windows. Playback is paused."),
+            _ => None,
+        }
+    }
+}
+
+fn is_roblox_player(image: &str) -> bool {
+    let name = image.rsplit(['\\', '/']).next().unwrap_or("");
+    name.eq_ignore_ascii_case("RobloxPlayerBeta.exe")
+        || name.eq_ignore_ascii_case("RobloxPlayer.exe")
+}
+
+pub fn activate_roblox_window(cancel: &std::sync::atomic::AtomicBool) -> ActivationResult {
+    if cancel.load(std::sync::atomic::Ordering::Relaxed) {
+        return ActivationResult::Cancelled;
+    }
+    #[cfg(windows)]
+    {
+        native::activate(cancel)
+    }
+    #[cfg(not(windows))]
+    {
+        ActivationResult::Unsupported
+    }
+}
+
+#[cfg(windows)]
+mod native {
+    use super::*;
+    use std::{
+        ptr::null_mut,
+        sync::atomic::{AtomicBool, Ordering},
+        time::Duration,
+    };
+    use windows_sys::Win32::{
+        Foundation::{CloseHandle, HWND, LPARAM},
+        System::Threading::{
+            OpenProcess, QueryFullProcessImageNameW, PROCESS_QUERY_LIMITED_INFORMATION,
+        },
+        UI::WindowsAndMessaging::{
+            EnumWindows, GetForegroundWindow, GetWindow, GetWindowThreadProcessId, IsIconic,
+            IsWindow, IsWindowVisible, SetForegroundWindow, ShowWindowAsync, GW_OWNER, SW_RESTORE,
+        },
+    };
+
+    fn player_window(window: HWND) -> bool {
+        unsafe {
+            let mut pid = 0;
+            GetWindowThreadProcessId(window, &mut pid);
+            if pid == 0 {
+                return false;
+            }
+            let process = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, 0, pid);
+            if process.is_null() {
+                return false;
+            }
+            let mut path = vec![0u16; 32768];
+            let mut size = path.len() as u32;
+            let ok = QueryFullProcessImageNameW(process, 0, path.as_mut_ptr(), &mut size);
+            CloseHandle(process);
+            ok != 0 && is_roblox_player(&String::from_utf16_lossy(&path[..size as usize]))
+        }
+    }
+
+    unsafe extern "system" fn find_window(window: HWND, result: LPARAM) -> i32 {
+        if IsWindowVisible(window) != 0
+            && GetWindow(window, GW_OWNER).is_null()
+            && player_window(window)
+        {
+            *(result as *mut HWND) = window;
+            return 0;
+        }
+        1
+    }
+
+    pub(super) fn activate(cancel: &AtomicBool) -> ActivationResult {
+        unsafe {
+            let foreground = GetForegroundWindow();
+            if !foreground.is_null() && player_window(foreground) {
+                return ActivationResult::Focused;
+            }
+            let mut target: HWND = null_mut();
+            EnumWindows(Some(find_window), &mut target as *mut HWND as LPARAM);
+            if cancel.load(Ordering::Relaxed) {
+                return ActivationResult::Cancelled;
+            }
+            if target.is_null() || IsWindow(target) == 0 {
+                return ActivationResult::NotFound;
+            }
+            if IsIconic(target) != 0 {
+                ShowWindowAsync(target, SW_RESTORE);
+            }
+            // Windows may deliver foreground activation asynchronously. Do not
+            // inject notes or check HuMidi's focus policy until it is confirmed.
+            SetForegroundWindow(target);
+            for _ in 0..40 {
+                if cancel.load(Ordering::Relaxed) {
+                    return ActivationResult::Cancelled;
+                }
+                let current = GetForegroundWindow();
+                if !current.is_null() && IsIconic(current) == 0 && (current == target || player_window(current)) {
+                    return ActivationResult::Focused;
+                }
+                std::thread::sleep(Duration::from_millis(20));
+            }
+            ActivationResult::Denied
+        }
+    }
 }
 
 pub fn app_has_focus<R: tauri::Runtime>(app: &tauri::AppHandle<R>) -> bool {
@@ -94,14 +226,49 @@ mod tests {
     }
 
     #[test]
-    fn defaults_to_pause_but_accepts_continue_setting() {
-        assert!(pause_on_focus(&serde_json::json!({})));
-        assert!(pause_on_focus(
+    fn focus_options_default_off_and_keep_explicit_saved_choices() {
+        assert!(!pause_on_focus(&serde_json::json!({})));
+        assert!(!pause_on_focus(
             &serde_json::json!({"pause_on_app_focus": null})
         ));
         assert!(!pause_on_focus(
             &serde_json::json!({"pause_on_app_focus": false})
         ));
+        assert!(pause_on_focus(
+            &serde_json::json!({"pause_on_app_focus": true})
+        ));
+        assert!(!auto_focus_roblox(&serde_json::json!({})));
+        assert!(!auto_focus_roblox(
+            &serde_json::json!({"auto_focus_roblox": null})
+        ));
+        assert!(auto_focus_roblox(
+            &serde_json::json!({"auto_focus_roblox": true})
+        ));
+    }
+
+    #[test]
+    fn identifies_player_processes_without_matching_browsers_studio_or_launchers() {
+        assert!(is_roblox_player(
+            r"C:\Roblox\Versions\v1\RobloxPlayerBeta.exe"
+        ));
+        assert!(is_roblox_player("ROBLOXPLAYER.EXE"));
+        for name in [
+            "chrome.exe",
+            "RobloxStudioBeta.exe",
+            "RobloxPlayerLauncher.exe",
+            "RobloxPlayerBeta.exe.backup",
+            "Roblox",
+        ] {
+            assert!(!is_roblox_player(name));
+        }
+    }
+
+    #[test]
+    fn cancelled_activation_does_not_enumerate_or_switch_any_window() {
+        assert_eq!(
+            activate_roblox_window(&std::sync::atomic::AtomicBool::new(true)),
+            ActivationResult::Cancelled
+        );
     }
 
     #[test]

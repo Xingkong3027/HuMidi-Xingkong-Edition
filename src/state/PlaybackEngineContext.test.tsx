@@ -79,7 +79,8 @@ const restoreMock = vi.hoisted(() => vi.fn());
 vi.mock("../lib/playlist", async () => ({ ...(await vi.importActual("../lib/playlist")), restorePlaylistCache: restoreMock }));
 
 const dialogOpen = vi.hoisted(() => vi.fn());
-vi.mock("../lib/appDialogs", () => ({ open: dialogOpen }));
+const dialogMessage = vi.hoisted(() => vi.fn(() => Promise.resolve()));
+vi.mock("../lib/appDialogs", () => ({ open: dialogOpen, message: dialogMessage }));
 
 function wrapper({ children }: { children: ReactNode }) {
   return (
@@ -211,6 +212,7 @@ beforeEach(() => {
   tauriMocks.resumeFromSave.mockReset();
   tauriMocks.getSaveDir.mockReturnValue(Promise.resolve(null));
   dialogOpen.mockReset();
+  dialogMessage.mockClear();
 });
 
 afterEach(() => {
@@ -1146,6 +1148,13 @@ describe("PlaybackEngineContext (Tauri mode, isTauri() = true)", () => {
     expect(tauriMocks.seekPlayback).not.toHaveBeenCalled();
     expect(tauriMocks.togglePause).toHaveBeenCalledTimes(1);
     expect(result.current.engine.isPaused).toBe(false);
+  });
+
+  it("explains failed Roblox activation in a visible application dialog", async () => {
+    renderEngine();
+    await waitFor(() => expect(eventHandlers.has("window_activation_failed")).toBe(true));
+    await act(async () => eventHandlers.get("window_activation_failed")?.("No Roblox game window was found."));
+    expect(dialogMessage).toHaveBeenCalledWith("No Roblox game window was found.", "自动切换窗口未完成");
   });
 
   it("stop calls the real command and resets the playback clock to the start", async () => {

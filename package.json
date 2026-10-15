@@ -1,7 +1,7 @@
 {
   "name": "humidi-xingkong-edition",
   "private": true,
-  "version": "2.1.2-xk.13",
+  "version": "2.1.2-xk.14",
   "type": "module",
   "scripts": {
     "dev": "vite",

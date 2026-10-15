@@ -16,6 +16,7 @@ pub enum PlayerEvent {
     Pedal(bool),
     AutoPaused,
     FocusPaused,
+    WindowActivationFailed(String),
     Error(String),
     Section(usize),
 }

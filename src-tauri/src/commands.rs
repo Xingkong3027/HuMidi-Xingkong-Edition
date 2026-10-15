@@ -663,6 +663,7 @@ fn event_to_channel_payload(event: &PlayerEvent) -> (&'static str, serde_json::V
         PlayerEvent::Pedal(b) => ("pedal_updated", serde_json::json!(b)),
         PlayerEvent::AutoPaused => ("auto_paused", serde_json::Value::Null),
         PlayerEvent::FocusPaused => ("focus_paused", serde_json::Value::Null),
+        PlayerEvent::WindowActivationFailed(message) => ("window_activation_failed", serde_json::json!(message)),
         PlayerEvent::Error(e) => ("error_occurred", serde_json::json!(e)),
         PlayerEvent::Section(idx) => ("section_changed", serde_json::json!(idx)),
     }
@@ -680,6 +681,19 @@ pub fn run_playback_loop(
 }
 
 pub fn run_playback_loop_with_focus(
+    engine: PlaybackEngine,
+    driver: &mut dyn KeyboardDriver,
+    cmd_rx: &mpsc::Receiver<PlaybackCommand>,
+    emit: impl FnMut(&PlayerEvent),
+    now_fn: impl FnMut() -> f64,
+    sleep_fn: impl FnMut(f64),
+    should_pause_for_focus: impl FnMut() -> bool,
+) {
+    run_playback_loop_with_activation(engine, driver, cmd_rx, emit, now_fn, sleep_fn, should_pause_for_focus,
+        || crate::managers::window_focus::ActivationResult::Disabled);
+}
+
+pub fn run_playback_loop_with_activation(
     mut engine: PlaybackEngine,
     driver: &mut dyn KeyboardDriver,
     cmd_rx: &mpsc::Receiver<PlaybackCommand>,
@@ -687,6 +701,7 @@ pub fn run_playback_loop_with_focus(
     mut now_fn: impl FnMut() -> f64,
     mut sleep_fn: impl FnMut(f64),
     mut should_pause_for_focus: impl FnMut() -> bool,
+    mut activate_window: impl FnMut() -> crate::managers::window_focus::ActivationResult,
 ) {
     let performance_enabled = engine.performance_optimization();
     let mut performance = crate::core::performance::PerformanceSession::new(false);
@@ -714,16 +729,28 @@ pub fn run_playback_loop_with_focus(
         }
     }
 
+    let activation = activate_window();
     emit(&PlayerEvent::Countdown(0));
-    if engine.should_release_pedal_on_start() {
+    if activation.failure_message().is_none()
+        && activation != crate::managers::window_focus::ActivationResult::Cancelled
+        && engine.should_release_pedal_on_start() {
         engine.release_pedal(driver);
     }
     engine.start(now_fn());
+    if activation == crate::managers::window_focus::ActivationResult::Cancelled {
+        for ev in engine.stop() { emit(&ev); }
+    } else if let Some(message) = activation.failure_message() {
+        for ev in engine.toggle_pause(now_fn()) { emit(&ev); }
+        emit(&PlayerEvent::FocusPaused);
+        emit(&PlayerEvent::Status(message.into()));
+        emit(&PlayerEvent::WindowActivationFailed(message.into()));
+    }
     let mut finished_emitted = false;
     let mut natural_finished_pending = false;
 
     loop {
-        if !engine.is_paused() && should_pause_for_focus() {
+        if engine.is_stopped() { break; }
+        if !engine.is_stopped() && !engine.is_paused() && should_pause_for_focus() {
             for ev in engine.toggle_pause(now_fn()) { emit(&ev); }
             emit(&PlayerEvent::FocusPaused);
             emit(&PlayerEvent::Status("Playback paused because HuMidi has keyboard focus. Switch to the target window and resume with the playback shortcut.".into()));
@@ -762,8 +789,15 @@ pub fn run_playback_loop_with_focus(
 
         match cmd_rx.try_recv() {
             Ok(PlaybackCommand::TogglePause) => {
-                for ev in engine.toggle_pause(now_fn()) {
-                    emit(&ev);
+                let activation = if engine.is_paused() { activate_window() } else { crate::managers::window_focus::ActivationResult::Disabled };
+                if activation == crate::managers::window_focus::ActivationResult::Cancelled {
+                    for ev in engine.stop() { emit(&ev); }
+                } else if let Some(message) = activation.failure_message() {
+                    emit(&PlayerEvent::FocusPaused);
+                    emit(&PlayerEvent::Status(message.into()));
+                    emit(&PlayerEvent::WindowActivationFailed(message.into()));
+                } else {
+                    for ev in engine.toggle_pause(now_fn()) { emit(&ev); }
                 }
             }
             Ok(PlaybackCommand::Seek(target)) => engine.seek(target),
@@ -839,6 +873,7 @@ fn start_playback_blocking<R: tauri::Runtime>(
     let cancel = Arc::new(std::sync::atomic::AtomicBool::new(false));
     let mut engine = PlaybackEngine::new(config, Vec::new());
     engine.set_cancellation_flag(Arc::clone(&cancel));
+    let focus_cancel = Arc::clone(&cancel);
     engine.load_compiled_events(merged_events, total_dur);
 
     let (cmd_tx, cmd_rx) = mpsc::channel();
@@ -847,7 +882,7 @@ fn start_playback_blocking<R: tauri::Runtime>(
 
     let thread = std::thread::spawn(move || {
         let start_instant = Instant::now();
-        run_playback_loop_with_focus(
+        run_playback_loop_with_activation(
             engine,
             &mut driver,
             &cmd_rx,
@@ -865,7 +900,13 @@ fn start_playback_blocking<R: tauri::Runtime>(
                 crate::managers::window_focus::app_has_focus(&app_for_thread)
                     && app_for_thread.state::<AppState>().app_config.lock()
                         .map(|config| crate::managers::window_focus::pause_on_focus(&config))
-                        .unwrap_or(true)
+                        .unwrap_or(false)
+            },
+            || {
+                let enabled = app_for_thread.state::<AppState>().app_config.lock()
+                    .map(|config| crate::managers::window_focus::auto_focus_roblox(&config)).unwrap_or(false);
+                if enabled { crate::managers::window_focus::activate_roblox_window(&focus_cancel) }
+                else { crate::managers::window_focus::ActivationResult::Disabled }
             },
         );
     });

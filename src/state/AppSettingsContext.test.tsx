@@ -44,7 +44,8 @@ describe("AppSettingsContext (preview mode, isTauri() = false)", () => {
   it("starts at documented defaults and never touches the backend", () => {
     const { result } = renderHook(() => useAppSettings(), { wrapper });
     expect(result.current.alwaysOnTop).toBe(false);
-    expect(result.current.pauseOnAppFocus).toBe(true);
+    expect(result.current.pauseOnAppFocus).toBe(false);
+    expect(result.current.autoFocusRoblox).toBe(false);
     expect(result.current.opacity).toBe(100);
     expect(result.current.showTimeline).toBe(true);
     expect(result.current.showPiano).toBe(true);
@@ -81,6 +82,17 @@ describe("AppSettingsContext (Tauri mode, isTauri() = true)", () => {
     await act(async () => result.current.setPauseOnAppFocus(true));
     expect(result.current.pauseOnAppFocus).toBe(true);
     expect(tauriMocks.saveAppConfig).toHaveBeenCalledWith({ pause_on_app_focus: true });
+  });
+
+  it("preserves explicit enabled focus settings and saves the Roblox option separately", async () => {
+    tauriMocks.loadAppConfig.mockResolvedValue({ pause_on_app_focus: true, auto_focus_roblox: true, auto_check_updates: false });
+    const { result } = renderHook(() => useAppSettings(), { wrapper });
+    await waitFor(() => expect(result.current.autoFocusRoblox).toBe(true));
+    expect(result.current.pauseOnAppFocus).toBe(true);
+    await act(async () => result.current.setAutoFocusRoblox(false));
+    expect(result.current.autoFocusRoblox).toBe(false);
+    expect(result.current.pauseOnAppFocus).toBe(true);
+    expect(tauriMocks.saveAppConfig).toHaveBeenCalledWith({ auto_focus_roblox: false });
   });
 
   it("hydrates every field from load_app_config on mount", async () => {

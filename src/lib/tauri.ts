@@ -461,6 +461,7 @@ export type PlayerEventMap = {
   pedal_updated: boolean;
   auto_paused: null;
   focus_paused: null;
+  window_activation_failed: string;
   error_occurred: string;
   section_changed: number;
   playback_started: null;

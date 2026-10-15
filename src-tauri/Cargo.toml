@@ -1,6 +1,6 @@
 [package]
 name = "humidi-tauri"
-version = "2.1.2-xk.13"
+version = "2.1.2-xk.14"
 description = "HuMidi Xingkong Edition — MIDI piano autoplayer"
 authors = ["smyGitt", "Xingkong3027"]
 edition = "2021"

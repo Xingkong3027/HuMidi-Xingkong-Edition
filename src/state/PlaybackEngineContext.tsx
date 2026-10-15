@@ -9,7 +9,7 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import { open as openDialog } from "../lib/appDialogs";
+import { open as openDialog, message as showMessage } from "../lib/appDialogs";
 import { parseMidiWithRepair } from "../lib/midiRepair";
 import {
   restorePlaylistCache,
@@ -320,6 +320,9 @@ export function PlaybackEngineProvider({ children }: { children: ReactNode }) {
       onEvent("focus_paused", () => {
         atEndRef.current = false;
         setIsPaused(true);
+      }),
+      onEvent("window_activation_failed", (message) => {
+        void showMessage(message, "自动切换窗口未完成");
       }),
       onEvent("error_occurred", (msg) => appendLog(`Error: ${msg}`)),
       onEvent("playback_started", () => {

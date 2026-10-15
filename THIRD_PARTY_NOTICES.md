@@ -1,4 +1,4 @@
-# Third-party notices — HuMidi Xingkong Edition 2.1.2-xk.13
+# Third-party notices — HuMidi Xingkong Edition 2.1.2-xk.14
 
 Original HuMidi: Copyright (c) 2026 smyGitt, MIT. Xingkong modifications: Copyright (c) 2026 Xingkong3027, MIT. Preserve `LICENSE`, `LICENSES/HuMidi-MIT.txt`, `LICENSES/Xingkong-MIT.txt` and `NOTICE.md` with the corresponding distribution.
 
