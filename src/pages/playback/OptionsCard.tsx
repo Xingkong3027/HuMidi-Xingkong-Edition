@@ -53,20 +53,6 @@ export function OptionsCard({ config, onChange, onReset }: OptionsCardProps) {
       />
       <div className="control-row">
         <ToggleSwitch
-          checked={config.release_pedal_on_start}
-          onChange={(v) => onChange({ release_pedal_on_start: v })}
-          label={t("开始时释放空格（踏板）")}
-        />
-      </div>
-      <div className="control-row">
-        <ToggleSwitch
-          checked={config.auto_pause}
-          onChange={(v) => onChange({ auto_pause: v })}
-          label={t("播放完毕保留暂停位置")}
-        />
-      </div>
-      <div className="control-row">
-        <ToggleSwitch
           checked={config.performance_optimization}
           onChange={(v) => onChange({ performance_optimization: v })}
           label={t("密集 MIDI 性能优化")}
@@ -75,13 +61,6 @@ export function OptionsCard({ config, onChange, onReset }: OptionsCardProps) {
       <span className="page-placeholder__hint">
         {t("关闭时优先兼容原版演奏；开启后加快密集谱与 AI 计算，合并同一时刻重复按键，可能产生细微演奏差异。")}
       </span>
-      <div className="control-row">
-        <ToggleSwitch
-          checked={config.debug_mode}
-          onChange={(v) => onChange({ debug_mode: v })}
-          label={t("调试输出")}
-        />
-      </div>
     </Card>
   );
 }

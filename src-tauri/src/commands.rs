@@ -646,7 +646,7 @@ pub async fn compile_pedal_and_play<R: tauri::Runtime>(
     run_blocking(move || {
         let state = app.state::<AppState>();
         let data = compile_pedal_blocking(&state, &app, &config)?;
-        start_playback_blocking(&state, &app, config)?;
+        start_playback_blocking(&state, &app, config, false)?;
         Ok(data)
     })
     .await
@@ -828,8 +828,15 @@ pub fn run_playback_loop_with_activation(
 fn start_playback_blocking<R: tauri::Runtime>(
     state: &AppState,
     app: &tauri::AppHandle<R>,
-    config: PlaybackConfig,
+    mut config: PlaybackConfig,
+    playlist_playback: bool,
 ) -> Result<(), String> {
+    // Snapshot once per new session, including resume from compiled archives.
+    // Changing a preference never changes an already-running session.
+    let preferences = crate::managers::playback_preferences::PlaybackPreferences::from_config(
+        &*state.app_config.lock().map_err(|e| e.to_string())?,
+    );
+    preferences.apply(&mut config, playlist_playback);
     // One thread owns keyboard injection. Stop and join the previous session
     // before creating its successor (playlist changes included).
     if let Some(previous) = state
@@ -882,6 +889,12 @@ fn start_playback_blocking<R: tauri::Runtime>(
 
     let thread = std::thread::spawn(move || {
         let start_instant = Instant::now();
+        if preferences.debug_mode {
+            let _ = app_for_thread.emit("status_updated", format!(
+                "[Debug] New playback session: playlist={playlist_playback}, release_pedal_on_start={}, auto_pause={}, auto_focus_roblox={}, pause_on_app_focus={}",
+                preferences.release_pedal_on_start, preferences.auto_pause && !playlist_playback,
+                preferences.auto_focus_roblox, preferences.pause_on_app_focus));
+        }
         run_playback_loop_with_activation(
             engine,
             &mut driver,
@@ -897,15 +910,11 @@ fn start_playback_blocking<R: tauri::Runtime>(
                 }
             },
             || {
-                crate::managers::window_focus::app_has_focus(&app_for_thread)
-                    && app_for_thread.state::<AppState>().app_config.lock()
-                        .map(|config| crate::managers::window_focus::pause_on_focus(&config))
-                        .unwrap_or(false)
+                preferences.pause_on_app_focus
+                    && crate::managers::window_focus::app_has_focus(&app_for_thread)
             },
             || {
-                let enabled = app_for_thread.state::<AppState>().app_config.lock()
-                    .map(|config| crate::managers::window_focus::auto_focus_roblox(&config)).unwrap_or(false);
-                if enabled { crate::managers::window_focus::activate_roblox_window(&focus_cancel) }
+                if preferences.auto_focus_roblox { crate::managers::window_focus::activate_roblox_window(&focus_cancel) }
                 else { crate::managers::window_focus::ActivationResult::Disabled }
             },
         );
@@ -925,8 +934,9 @@ fn start_playback_blocking<R: tauri::Runtime>(
 pub async fn start_playback<R: tauri::Runtime>(
     app: tauri::AppHandle<R>,
     config: PlaybackConfig,
+    playlist_playback: Option<bool>,
 ) -> Result<(), String> {
-    run_blocking(move || start_playback_blocking(&app.state::<AppState>(), &app, config)).await
+    run_blocking(move || start_playback_blocking(&app.state::<AppState>(), &app, config, playlist_playback.unwrap_or(false))).await
 }
 
 #[tauri::command]
@@ -991,7 +1001,8 @@ pub fn get_midi_dir(state: State<AppState>) -> Result<String, String> {
 
 #[tauri::command]
 pub fn load_app_config(state: State<AppState>) -> Result<Value, String> {
-    let app_config = state.app_config.lock().map_err(|e| e.to_string())?;
+    let mut app_config = state.app_config.lock().map_err(|e| e.to_string())?;
+    crate::managers::playback_preferences::migrate(&mut app_config);
     Ok(app_config.clone())
 }
 

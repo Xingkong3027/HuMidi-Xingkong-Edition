@@ -1,5 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { DEFAULT_CONFIG, type PlaybackConfig } from "../pages/playback/types";
+import { withoutPlaybackGlobals } from "./playbackGlobals";
 import {
   toBackendConfig,
   type SelectedTrackInfo,
@@ -113,6 +114,7 @@ export const restorePlaylistCache = (
 /** Python archives use percent tempo; Rust archives use ratios. Explicit unit
  * markers make migration idempotent. Legacy schema fields identify Python data. */
 export function songConfig(settings: Record<string, unknown>): PlaybackConfig {
+  settings = withoutPlaybackGlobals(settings);
   const patch: Record<string, unknown> = {};
   for (const key of Object.keys(DEFAULT_CONFIG))
     if (
@@ -152,14 +154,14 @@ export function songConfig(settings: Record<string, unknown>): PlaybackConfig {
   return { ...DEFAULT_CONFIG, ...patch } as PlaybackConfig;
 }
 export function songSettings(config: PlaybackConfig): Record<string, unknown> {
-  return {
+  return withoutPlaybackGlobals({
     ...config,
     tempo: config.tempo / 100,
     tempo_unit: "ratio",
     articulation: config.articulation / 100,
     drift_decay_factor: config.drift_decay_factor / 100,
     midi_file: "",
-  };
+  });
 }
 export function makeMidiSong(
   path: string,

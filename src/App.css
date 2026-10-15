@@ -652,7 +652,8 @@ button:disabled {
 
 .playback-tab__file-page,
 .playback-tab__playback-page,
-.playback-tab__humanize-page {
+.playback-tab__humanize-page,
+.playback-globals {
   display: flex;
   flex-direction: column;
   gap: var(--space-2);

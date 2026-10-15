@@ -11,8 +11,12 @@ import {
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { isTauri, loadAppConfig, saveAppConfig, onEvent } from "../lib/tauri";
 import { useLog } from "./LogContext";
+import { readGlobalPlayback } from "../lib/playbackGlobals";
 
 interface AppSettings {
+  releasePedalOnStart: boolean;
+  pauseAtEnd: boolean;
+  debugOutput: boolean;
   autoFocusRoblox: boolean;
   pauseOnAppFocus: boolean;
   alwaysOnTop: boolean;
@@ -29,6 +33,9 @@ interface AppSettings {
 }
 
 interface AppSettingsContextValue extends AppSettings {
+  setReleasePedalOnStart: (v: boolean) => void;
+  setPauseAtEnd: (v: boolean) => void;
+  setDebugOutput: (v: boolean) => void;
   setAutoFocusRoblox: (v: boolean) => void;
   setPauseOnAppFocus: (v: boolean) => void;
   setAlwaysOnTop: (v: boolean) => void;
@@ -66,6 +73,9 @@ function applyAlwaysOnTop(value: boolean, report: (message: string) => void) {
 }
 
 const DEFAULTS: AppSettings = {
+  releasePedalOnStart: false,
+  pauseAtEnd: true,
+  debugOutput: false,
   pauseOnAppFocus: false,
   autoFocusRoblox: false,
   alwaysOnTop: false,
@@ -87,6 +97,9 @@ export function AppSettingsProvider({ children }: { children: ReactNode }) {
   const { appendLog } = useLog();
   const appendLogRef = useRef(appendLog);
   appendLogRef.current = appendLog;
+  const [releasePedalOnStart, setReleasePedalOnStartState] = useState(DEFAULTS.releasePedalOnStart);
+  const [pauseAtEnd, setPauseAtEndState] = useState(DEFAULTS.pauseAtEnd);
+  const [debugOutput, setDebugOutputState] = useState(DEFAULTS.debugOutput);
   const [alwaysOnTop, setAlwaysOnTopState] = useState(DEFAULTS.alwaysOnTop);
   const [pauseOnAppFocus, setPauseOnAppFocusState] = useState(DEFAULTS.pauseOnAppFocus);
   const [autoFocusRoblox, setAutoFocusRobloxState] = useState(DEFAULTS.autoFocusRoblox);
@@ -136,6 +149,10 @@ export function AppSettingsProvider({ children }: { children: ReactNode }) {
     if (!isTauri()) return;
     loadAppConfig()
       .then((cfg) => {
+        const globals = readGlobalPlayback(cfg);
+        setReleasePedalOnStartState(globals.releasePedalOnStart);
+        setPauseAtEndState(globals.pauseAtEnd);
+        setDebugOutputState(globals.debugOutput);
         if (typeof cfg.auto_focus_roblox === "boolean") setAutoFocusRobloxState(cfg.auto_focus_roblox);
         if (typeof cfg.pause_on_app_focus === "boolean") setPauseOnAppFocusState(cfg.pause_on_app_focus);
         if (typeof cfg.always_on_top === "boolean") {
@@ -181,6 +198,21 @@ export function AppSettingsProvider({ children }: { children: ReactNode }) {
   function setPauseOnAppFocus(v: boolean) {
     setPauseOnAppFocusState(v);
     if (isTauri()) void saveAppConfig({ pause_on_app_focus: v });
+  }
+
+  function setReleasePedalOnStart(v: boolean) {
+    setReleasePedalOnStartState(v);
+    if (isTauri()) void saveAppConfig({ xk_global_release_pedal_on_start: v }).catch(e => appendLog(`Saving pedal preference failed: ${String(e)}`));
+  }
+
+  function setPauseAtEnd(v: boolean) {
+    setPauseAtEndState(v);
+    if (isTauri()) void saveAppConfig({ xk_global_auto_pause: v }).catch(e => appendLog(`Saving end preference failed: ${String(e)}`));
+  }
+
+  function setDebugOutput(v: boolean) {
+    setDebugOutputState(v);
+    if (isTauri()) void saveAppConfig({ xk_global_debug_mode: v }).catch(e => appendLog(`Saving debug preference failed: ${String(e)}`));
   }
 
   function setAutoFocusRoblox(v: boolean) {
@@ -250,6 +282,12 @@ export function AppSettingsProvider({ children }: { children: ReactNode }) {
 
   const value = useMemo(
     () => ({
+      releasePedalOnStart,
+      setReleasePedalOnStart,
+      pauseAtEnd,
+      setPauseAtEnd,
+      debugOutput,
+      setDebugOutput,
       autoFocusRoblox,
       setAutoFocusRoblox,
       pauseOnAppFocus,
@@ -282,6 +320,9 @@ export function AppSettingsProvider({ children }: { children: ReactNode }) {
       dismissUpdateAvailable,
     }),
     [
+      releasePedalOnStart,
+      pauseAtEnd,
+      debugOutput,
       autoFocusRoblox,
       pauseOnAppFocus,
       alwaysOnTop,

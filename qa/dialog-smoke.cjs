@@ -6,7 +6,7 @@ const out=process.env.HUMIDI_QA_OUTPUT||path.resolve(__dirname,'../qa-output');f
  for(const [width,height,font]of[[860,640,16],[1180,780,12],[860,640,24]]){
   const context=await browser.newContext({viewport:{width,height},locale:'zh-CN'});await context.addInitScript(fixture);const page=await context.newPage();const errors=[],native=[];
   page.on('pageerror',e=>errors.push(String(e)));page.on('dialog',async d=>{native.push(d.type());await d.dismiss();});
-  await page.goto('http://127.0.0.1:1420/');await page.getByText('全局默认设置 · 自动保存，仅用于之后新导入的曲目。').waitFor();await page.evaluate(f=>document.documentElement.style.setProperty('--font-size',f+'px'),font);
+  await page.goto('http://127.0.0.1:1420/');await page.getByText('新曲目默认值 · 自动保存，仅用于之后新导入的曲目。').waitFor();await page.evaluate(f=>document.documentElement.style.setProperty('--font-size',f+'px'),font);
   await page.evaluate(async()=>{const api=await import('/src/lib/appDialogs.ts');window.__answer=api.ask('确定删除选中的曲目？',{title:'删除歌曲',okLabel:'删除'});});
   await page.getByRole('dialog',{name:'删除歌曲'}).waitFor();
   const before=await page.evaluate(()=>window.__calls.filter(c=>c.cmd==='start_playback').length);await page.evaluate(()=>window.dispatchEvent(new Event('xingkong-play-request',{cancelable:true})));assert.equal(await page.evaluate(()=>window.__calls.filter(c=>c.cmd==='start_playback').length),before,'modal did not block playback');

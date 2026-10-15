@@ -5,7 +5,9 @@
 [![Release](https://img.shields.io/github/v/release/Xingkong3027/HuMidi-Xingkong-Edition?display_name=tag)](https://github.com/Xingkong3027/HuMidi-Xingkong-Edition/releases)
 [![CI](https://github.com/Xingkong3027/HuMidi-Xingkong-Edition/actions/workflows/ci.yml/badge.svg)](https://github.com/Xingkong3027/HuMidi-Xingkong-Edition/actions/workflows/ci.yml)
 
-**Current version: 2.1.2-xk.14 · Windows x64 portable EXE**
+**Local test version: 2.1.2-xk.15 · Windows x64 portable EXE**
+
+This version has not been published to GitHub. Releases still offers xk.14 as the latest public release; the xk.15 assets below are delivered locally.
 
 Xingkong Edition is an unofficial fork of [smyGitt/HuMidi-Roblox-Piano-Autoplayer](https://github.com/smyGitt/HuMidi-Roblox-Piano-Autoplayer) that turns MIDI files and Virtual Piano text sheets into virtual-piano keyboard input. It uses **upstream 2.1.2's Rust / Tauri 2 / React architecture**, carrying forward the Python fork's advanced playlists, localization, per-song settings, trimming, seed policies and extended shortcuts, alongside the newer PedalAI integration.
 
@@ -20,6 +22,7 @@ This guide follows the older detailed README, with instructions, build commands 
 - [Humanization and random seeds](#humanization-and-random-seeds)
 - [Advanced playlists and batch operations](#advanced-playlists-and-batch-operations)
 - [Playlist migration and backup](#playlist-migration-and-backup)
+- [Global playback settings](#global-playback-settings)
 - [Roblox window focus options](#roblox-window-focus-options)
 - [Text-sheet conversion](#text-sheet-conversion)
 - [Shortcuts and interface](#shortcuts-and-interface)
@@ -35,9 +38,9 @@ Download from [this repository's Releases](https://github.com/Xingkong3027/HuMid
 
 | Asset | Purpose |
 | --- | --- |
-| `HuMidi-Xingkong-Edition-2.1.2-xk.14-Windows-x64.exe` | Portable Windows x64 application; run directly. |
-| `HuMidi-Xingkong-Edition-2.1.2-xk.14-Source.zip` | Complete source matching the version tag, for review, modification and rebuilding. |
-| `HuMidi-Xingkong-Edition-2.1.2-xk.14-Licenses.zip` | Application, dependency and model notices and license texts. |
+| `HuMidi-Xingkong-Edition-2.1.2-xk.15-Windows-x64.exe` | Portable Windows x64 application; run directly. |
+| `HuMidi-Xingkong-Edition-2.1.2-xk.15-Source.zip` | Complete source snapshot for this local version, for review, modification and rebuilding. |
+| `HuMidi-Xingkong-Edition-2.1.2-xk.15-Licenses.zip` | Application, dependency and model notices and license texts. |
 | `SHA256SUMS.txt`, `*.exe.sha256` | SHA-256 checksums for download integrity. |
 
 The release targets **Windows 10/11 x64** and requires **Microsoft Edge WebView2 Runtime**, plus a Roblox piano experience that accepts keyboard input. The EXE embeds its UI, icon and PedalAI model. Python, Node.js, Rust and adjacent model files are not required to run it. WebView2 itself is not embedded; installation options are on [Microsoft's download page](https://developer.microsoft.com/en-us/microsoft-edge/webview2/).
@@ -66,8 +69,6 @@ Batch import can select playable tracks automatically or let you assign tracks a
 | Transpose | Changes pitch; check the target piano's supported key range too. |
 | 88-key layout | Enable only for a target that supports the corresponding layout. Standard and 88-key mappings must match the game. |
 | Countdown | Off or 1–10 seconds; saved separately for each playlist song. |
-| Release Space/pedal on start | Clears a pre-existing pedal state when required by the target. |
-| Keep end position paused | Controls the Playback page's ending position. Playlist continuation follows its mode and natural-finish event. |
 | Dense-MIDI performance optimization | Disabled by default and saved per song. Additional dense-score and AI acceleration paths require this switch. |
 
 ### Non-destructive trimming
@@ -157,9 +158,25 @@ Cache-only legacy songs can restore their old results, but cannot edit parameter
 
 This version includes legacy speed-unit and missing/null pedal-curve fixes and can read previously affected songs. If a song was edited and resaved at an incorrect speed, keep the original package and import from it again. See the [migration guide](docs/MIGRATION.md) for details.
 
+## Global playback settings
+
+Playback now has Individual settings, Humanization and Global settings tabs. Without a loaded song, Individual settings explicitly edits new-song defaults for future imports; an edited song shows its scope. The per-song choice of a global humanization preset remains separate from these application runtime preferences.
+
+These five preferences are saved automatically for the application, rather than individual MIDI/text songs or caches, and are not playlist batch-edit fields:
+
+| Global preference | Purpose |
+| --- | --- |
+| Release Space/pedal on start | Release once before output; later pedal events are unchanged. Off by default. |
+| Keep position at the end of single-song previews | Formerly keep-end-position-paused. On by default; seek back to replay a passage or press Play to restart. Playlists still follow their mode. |
+| Debug output | Off by default. Log the session's global switches on the Debug page without changing notes, pedal or timing. |
+| Automatically focus Roblox when playing | Off by default; see the next section. |
+| Pause when HuMidi has focus | Off by default; see the next section. |
+
+Changes apply on the **next playback start**, without MIDI re-import. The current session, including pause/resume, retains its starting preferences. The three former song switches migrate from saved import defaults; explicit application preferences take priority. Old playlist/archive fields cannot overwrite them, and new playlist exports omit runtime switches.
+
 ## Roblox window focus options
 
-Both settings are under **Settings → Display → Window** and **disabled by default**. Explicitly saved choices are preserved.
+Both settings are under **Playback → Global settings → Window focus**; their duplicate location in application settings has been removed. They are **disabled by default**. Explicitly saved choices are preserved.
 
 | Activate Roblox automatically | Pause when HuMidi has focus | Behavior |
 | --- | --- | --- |
@@ -233,7 +250,7 @@ cargo test --manifest-path src-tauri/Cargo.toml --locked
 npm run tauri dev
 ```
 
-Local validation of the xk.14 application code passed **518 frontend** and **926 backend** tests and the portable build, including authorized private-sample regressions. Public CI does not distribute private MIDI/playlists and skips sample-dependent cases without their environment variables; equal test counts do not establish equal coverage. Documentation updates do not change the previously built application code.
+Local validation of the xk.15 application code passed **524 frontend** and **931 backend** tests and the portable build, including authorized private-sample regressions. Public CI does not distribute private MIDI/playlists and skips sample-dependent cases without their environment variables; equal test counts do not establish equal coverage.
 
 [Full build instructions](BUILDING.md) · [Publishing](PUBLISHING.md) · [Validation](docs/VALIDATION.md) · [Manual checklist](MANUAL_TEST_CHECKLIST.md)
 

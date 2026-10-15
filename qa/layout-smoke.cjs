@@ -43,7 +43,7 @@ function fixture(){
   }
   if(cmd==='get_custom_themes')return [];
   if(cmd==='get_active_theme_name')return 'Midnight';
-  if(cmd==='plugin:app|version')return '2.1.2-xk.14';
+  if(cmd==='plugin:app|version')return '2.1.2-xk.15';
   if(cmd==='get_save_dir')return '/saves';
   if(cmd.includes('inner_size')||cmd.includes('outer_size'))return {width:860,height:640};
   if(cmd==='plugin:window|scale_factor')return 1;
@@ -67,7 +67,7 @@ if(require.main===module)(async()=>{
  const browser=await chromium.launch({channel:'msedge',headless:true});const result=[];
  for(const [width,height,font] of [[860,640,12],[860,640,16],[1180,780,12]]){
   console.log(`checking ${width}x${height} ${font}px`); const context=await browser.newContext({viewport:{width,height},locale:'zh-CN'});await context.addInitScript(fixture);const page=await context.newPage();
-  const errors=[];page.on('pageerror',e=>errors.push(String(e)));await page.goto('http://127.0.0.1:1420/');await page.getByText('全局默认设置 · 自动保存，仅用于之后新导入的曲目。').waitFor();
+  const errors=[];page.on('pageerror',e=>errors.push(String(e)));await page.goto('http://127.0.0.1:1420/');await page.getByText('新曲目默认值 · 自动保存，仅用于之后新导入的曲目。').waitFor();
   await page.evaluate(f=>document.documentElement.style.setProperty('--font-size',f+'px'),font);
   await page.getByRole('button',{name:'模拟人演奏',exact:true}).click();
   const row=page.locator('.hum-row').filter({has:page.getByRole('switch',{name:'失误概率',exact:true})});
@@ -78,7 +78,7 @@ if(require.main===module)(async()=>{
   assert(await page.locator('.apply-toast--visible').count()===0,'defaults showed song apply footer');
   await page.screenshot({path:path.join(out,`xk3-滚动-${width}x${height}-${font}px.png`)});
   await page.getByRole('button',{name:'歌单',exact:true}).click();await page.locator('.playlist-row').filter({hasText:'缓存测试曲目'}).click();await page.getByRole('button',{name:'修改歌曲',exact:true}).click();
-  await page.getByRole('button',{name:'演奏设置',exact:true}).click();await page.getByText('编辑阈值曲线',{exact:false}).count();
+  await page.getByRole('button',{name:'独立设置',exact:true}).click();await page.getByText('编辑阈值曲线',{exact:false}).count();
   const card=page.locator('.pedal-ai-card');await card.locator('button[title="编辑阈值曲线"]').waitFor();checks.push(await checkBottom(page,card.locator('.pedal-ai-card__legend'),'pedal threshold legend'));
   // Editing a parameter introduces a footer; the bottom control must remain reachable.
   await page.locator('.performance-card input[type=number]').fill('2');
@@ -89,7 +89,7 @@ if(require.main===module)(async()=>{
   if(width===860&&font===12){
    await page.locator('.playlist-row').filter({hasText:'缓存测试曲目'}).click();await page.getByRole('button',{name:'播放选中曲目',exact:true}).click();
    await page.waitForTimeout(120);await page.locator('.sidebar').getByRole('button',{name:'演奏',exact:true}).click();
-   await page.getByText('全局默认设置 · 自动保存，仅用于之后新导入的曲目。').waitFor();
+   await page.getByText('新曲目默认值 · 自动保存，仅用于之后新导入的曲目。').waitFor();
    await page.locator('.sidebar').getByRole('button',{name:'可视化',exact:true}).click();
    assert(await page.locator('.piano-keyboard__key').first().evaluate(e=>getComputedStyle(e).borderRadius==='0px'),'piano key is rounded');
    await page.screenshot({path:path.join(out,'xk4-直角钢琴.png')});
@@ -98,7 +98,7 @@ if(require.main===module)(async()=>{
    const tempo=await page.evaluate(()=>window.__config.xk_default_settings?.tempo??window.__config.tempo);assert.equal(tempo,135,'song playback overwrote defaults');
    await page.getByRole('button',{name:'模拟人演奏',exact:true}).click();
    await page.getByRole('switch',{name:'失误概率',exact:true}).click();
-   await page.getByRole('button',{name:'演奏设置',exact:true}).click();
+   await page.getByRole('button',{name:'独立设置',exact:true}).click();
    await page.getByRole('button',{name:'导入 MIDI',exact:true}).click();await page.getByRole('button',{name:'确定',exact:true}).click();
    await page.getByText('正在设置导入草稿，加入歌单后保存。').waitFor();
    assert(await page.getByRole('button',{name:'放弃导入',exact:true}).count()===1);assert(await page.locator('.apply-toast--visible').count()===0);

@@ -23,6 +23,11 @@ pub(super) fn normalize_settings(
     let Some(fields) = settings.as_object_mut() else {
         return Ok(false);
     };
+    // Runtime policy belongs to the application, never to an imported song.
+    for key in ["release_pedal_on_start", "auto_pause", "debug_mode", "auto_focus_roblox", "pause_on_app_focus",
+        "xk_global_release_pedal_on_start", "xk_global_auto_pause", "xk_global_debug_mode"] {
+        fields.remove(key);
+    }
     // xk.9/xk.10 background caching wrote absent legacy curve fields as null.
     // Both absence and null mean no custom curve, not an invalid sequence.
     for key in ["pedal_curve_on", "pedal_curve_off"] {

@@ -193,6 +193,7 @@ describe("playlist editor preparation", () => {
     expect(tauriMocks.startPlayback).toHaveBeenLastCalledWith(
       used,
       "/library/test.mid",
+      false,
     );
   });
 });

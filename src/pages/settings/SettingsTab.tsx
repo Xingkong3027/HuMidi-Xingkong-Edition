@@ -81,18 +81,6 @@ function DisplayPage() {
       </Card>
       <Card title={t("窗口")}>
         <div className="control-row">
-          <div>
-            <ToggleSwitch checked={settings.autoFocusRoblox} onChange={settings.setAutoFocusRoblox} label={t("播放时自动切换到 Roblox 窗口")} />
-            <p className="page-placeholder__hint">{t("默认关闭。开始演奏或手动继续时，在倒计时后尝试切换一次；找不到游戏窗口或切换失败则暂停并提示。演奏中不会反复抢回焦点。")}</p>
-          </div>
-        </div>
-        <div className="control-row">
-          <div>
-            <ToggleSwitch checked={settings.pauseOnAppFocus} onChange={settings.setPauseOnAppFocus} label={t("本窗口获得焦点时暂停演奏")} />
-            <p className="page-placeholder__hint">{t("默认关闭。开启后，开始演奏会先完成自动切换，再检查本窗口是否有焦点；演奏中主动切回本窗口仍会暂停。关闭后进度继续，本窗口不接收演奏按键。")}</p>
-          </div>
-        </div>
-        <div className="control-row">
           <ToggleSwitch
             checked={settings.alwaysOnTop}
             onChange={settings.setAlwaysOnTop}

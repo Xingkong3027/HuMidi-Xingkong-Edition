@@ -7,3 +7,4 @@ pub mod shortcuts;
 pub mod theme_manager;
 pub mod update_manager;
 pub mod window_focus;
+pub mod playback_preferences;

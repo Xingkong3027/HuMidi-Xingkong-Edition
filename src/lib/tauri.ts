@@ -236,9 +236,11 @@ export function blockedInputMessage(error: unknown): string | null {
 export async function startPlayback(
   config: PlaybackConfig,
   midiFile: string,
+  playlistPlayback = false,
 ): Promise<void> {
   return invoke("start_playback", {
     config: toBackendConfig(config, midiFile),
+    playlistPlayback,
   });
 }
 

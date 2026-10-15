@@ -69,6 +69,9 @@ function AppShell() {
     { parse: parseBoolean },
   );
   const [trackSelectionOpen, setTrackSelectionOpen] = useState(false);
+  const [editorSubTab, setEditorSubTab] = usePersistedState("ui_editor_subtab", 0, {
+    parse: parseOneOf([0, 1, 2]),
+  });
   const windowRef = useRef<HTMLDivElement>(null);
   const { appendLog } = useLog();
   useCollapsedWindowSize(isCollapsed, windowRef, appendLog);
@@ -266,7 +269,7 @@ function AppShell() {
             <div className="app-page-area">
               <FileHeader />
               {translateNode(
-                activePage === "playback" && (
+                activePage === "playback" && editorSubTab !== 2 && (
                   <div className="song-actions">
                     <span>
                       {playlist.pendingCount > 1
@@ -276,7 +279,7 @@ function AppShell() {
                         : playlist.loadedId
                           ? t("正在修改歌单曲目 · 设置仅保存到此曲目")
                           : playlist.pendingCount > 0 ? t("导入草稿 · 参数将在加入歌单时保存")
-                          : t("全局默认设置 · 新导入 MIDI 使用这些参数")}
+                          : t("新曲目默认值 · 新导入 MIDI 使用这些参数")}
                     </span>
                     {(playlist.loadedId || playlist.pendingCount > 0) && (
                       <Button disabled={waiting} onClick={cancelChanges}>
@@ -317,6 +320,8 @@ function AppShell() {
                 {translateNode(
                   activePage === "playback" ? (
                     <PlaybackTab
+                        activeTab={editorSubTab}
+                        onTabChange={setEditorSubTab}
                       onEditTrackSelection={() => setTrackSelectionOpen(true)}
                       onSaveChanges={saveSong}
                       onCancelChanges={cancelChanges}

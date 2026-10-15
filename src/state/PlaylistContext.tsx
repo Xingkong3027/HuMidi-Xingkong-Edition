@@ -323,7 +323,7 @@ export function PlaylistProvider({ children }: { children: ReactNode }) {
       if (ticket !== ticketRef.current) return;
       currentRef.current = id; setCurrentId(id); setSelected([id]);
       activeRef.current = true; setActive(true); setProgress("");
-      await engine.startPrepared({ ...used, auto_pause: false });
+      await engine.startPrepared(used, true);
       if (!cacheHit) await refresh();
     });
     if (!success) { activeRef.current = false; setActive(false); }

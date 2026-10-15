@@ -1,5 +1,6 @@
 import { DEFAULT_CONFIG, PEDAL_MAPPING, type PlaybackConfig } from "./types";
 import { setGlobalHumanization, validSeed } from "./humanization";
+import { SONG_IGNORED_GLOBAL_KEYS } from "../../lib/playbackGlobals";
 
 type ConfigKey = Exclude<
   keyof PlaybackConfig,
@@ -44,7 +45,9 @@ export const PERSISTED_NAMES: Record<ConfigKey, string> = {
   pedal_before_humanize: "pedal_before_humanize",
 };
 
-const CONFIG_KEYS = Object.keys(PERSISTED_NAMES) as ConfigKey[];
+const CONFIG_KEYS = (Object.keys(PERSISTED_NAMES) as ConfigKey[]).filter(
+  key => !(SONG_IGNORED_GLOBAL_KEYS as readonly string[]).includes(key),
+);
 const PEDAL_STYLES: readonly unknown[] = Object.values(PEDAL_MAPPING);
 
 function isValid(key: ConfigKey, value: unknown): boolean {

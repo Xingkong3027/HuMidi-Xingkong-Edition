@@ -1,3 +1,5 @@
+import { LogProvider } from "../../state/LogContext";
+import { AppSettingsProvider } from "../../state/AppSettingsContext";
 import { fireEvent, render, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { PlaybackConfigProvider } from "../../state/PlaybackConfigContext";
@@ -39,13 +41,13 @@ const cancel = vi.fn();
 const tracks = vi.fn();
 function tree() {
   return (
-    <PlaybackConfigProvider>
+    <LogProvider><AppSettingsProvider><PlaybackConfigProvider>
       <PlaybackTab
         onEditTrackSelection={tracks}
         onSaveChanges={save}
         onCancelChanges={cancel}
       />
-    </PlaybackConfigProvider>
+    </PlaybackConfigProvider></AppSettingsProvider></LogProvider>
   );
 }
 beforeEach(() => {
@@ -97,6 +99,26 @@ describe("song editor", () => {
 it("import drafts use their settings directly without dead apply or discard buttons", () => {
   state.pendingCount = 1; state.settingsDirty = true;
   render(tree());
-  expect(screen.getByText("正在设置导入草稿，加入歌单后保存。")).toBeTruthy();
+  expect(screen.getByText(/导入草稿独立设置/)).toBeTruthy();
   expect(document.querySelector(".apply-toast--visible")).toBeNull();
+});
+
+it("groups all five global switches separately without saving the edited song", () => {
+  state.loadedId="a"; state.settingsDirty=true;
+  render(tree());
+  expect(screen.getByText("独立设置")).toBeTruthy();
+  expect(screen.queryByRole("switch",{name:"开始时释放空格（踏板）"})).toBeNull();
+  expect(screen.queryByRole("switch",{name:"调试输出"})).toBeNull();
+  fireEvent.click(screen.getByRole("button",{name:"全局设置"}));
+  for (const name of ["开始时释放空格（踏板）","单曲试听结束后停留在曲尾","调试输出","播放时自动切换到 Roblox 窗口","本窗口获得焦点时暂停演奏"]) {
+    const control=screen.getByRole("switch",{name});
+    const before=control.getAttribute("aria-checked");
+    fireEvent.click(control);
+    expect(control.getAttribute("aria-checked")).not.toBe(before);
+  }
+  expect(document.querySelector(".apply-toast--visible")).toBeNull();
+  expect(screen.queryByText("修改音轨选择")).toBeNull();
+  expect(save).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole("button",{name:"独立设置"}));
+  expect(document.querySelector(".apply-toast--visible")).not.toBeNull();
 });

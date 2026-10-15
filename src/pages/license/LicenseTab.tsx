@@ -30,7 +30,7 @@ const LICENSE_TEXTS: Record<string, string> = {
   HuMidi: MIT_LICENSE("2026", "smyGitt"),
 
   Xingkong:
-    "HuMidi · Xingkong 2.1.2-xk.14\n\n基于 smyGitt / HuMidi 2.1.2，迁移 Xingkong3027 分支的高级歌单与演奏功能。\n\n原项目：https://github.com/smyGitt/HuMidi-Roblox-Piano-Autoplayer\nXingkong 分支：https://github.com/Xingkong3027/HuMidi-Xingkong-Edition\n\n保留原项目版权及第三方许可，许可原文见其余分页。",
+    "HuMidi · Xingkong 2.1.2-xk.15\n\n基于 smyGitt / HuMidi 2.1.2，迁移 Xingkong3027 分支的高级歌单与演奏功能。\n\n原项目：https://github.com/smyGitt/HuMidi-Roblox-Piano-Autoplayer\nXingkong 分支：https://github.com/Xingkong3027/HuMidi-Xingkong-Edition\n\n保留原项目版权及第三方许可，许可原文见其余分页。",
 
   "PedalAI Dataset": `The following datasets were used to train the BiLSTM AI pedal timing
 model bundled with HuMidi.

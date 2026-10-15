@@ -1,7 +1,5 @@
 import { t, translateNode } from "../../lib/i18n";
-import { useMemo } from "react";
-import { usePersistedState } from "../../state/usePersistedState";
-import { parseOneOf } from "../../state/persistedParsers";
+import { useMemo, useState } from "react";
 import { TabPage } from "../../components/TabPage";
 import { Button } from "../../components/Button";
 import { PerformanceCard } from "./PerformanceCard";
@@ -18,20 +16,25 @@ import { usePlaybackConfig } from "../../state/PlaybackConfigContext";
 import { usePlaybackEngine } from "../../state/PlaybackEngineContext";
 import { usePlaylist } from "../../state/PlaylistContext";
 import { Checkbox } from "../../components/Field";
-const TABS = ["演奏设置", "模拟人演奏"] as const;
+import { GlobalPlaybackSettings } from "./GlobalPlaybackSettings";
+const TABS = ["独立设置", "模拟人演奏", "全局设置"] as const;
 interface PlaybackTabProps {
+  activeTab?: number;
+  onTabChange?: (index: number) => void;
   onEditTrackSelection: () => void;
   onSaveChanges: () => Promise<void>;
   onCancelChanges: () => void;
 }
 export function PlaybackTab({
+  activeTab,
+  onTabChange,
   onEditTrackSelection,
   onSaveChanges,
   onCancelChanges,
 }: PlaybackTabProps) {
-  const [subTab, setSubTab] = usePersistedState("ui_editor_subtab", 0, {
-    parse: parseOneOf([0, 1]),
-  });
+  const [localSubTab, setLocalSubTab] = useState(0);
+  const subTab = activeTab ?? localSubTab;
+  const setSubTab = onTabChange ?? setLocalSubTab;
   const { config, updateConfig } = usePlaybackConfig();
   const engine = usePlaybackEngine();
   const playlist = usePlaylist();
@@ -62,8 +65,11 @@ export function PlaybackTab({
 
   return (
     <div className="playback-tab">
-      <div className="editor-scope-note">{t(editingSource ? playlist.loadedId ? "正在修改此曲目，保存后返回歌单。" : "正在设置导入草稿，加入歌单后保存。" : "全局默认设置 · 自动保存，仅用于之后新导入的曲目。")}</div>
-      {editingSource && <div className="editor-track-row">
+      <div className="editor-scope-note">{subTab === 2
+        ? t("全局演奏设置 · 自动保存，不随歌曲切换或歌单导入改变。")
+        : <>{t(editingSource ? playlist.loadedId ? "当前曲目独立设置" : "导入草稿独立设置" : "新曲目默认值 · 自动保存，仅用于之后新导入的曲目。")}{editingSource && <> · {engine.fileName || t("当前曲目")}</>}</>}
+      </div>
+      {editingSource && subTab !== 2 && <div className="editor-track-row">
         <span>
           {t("音轨选择")} · {engine.selectedTracksInfo.length} {t("条音轨")}
         </span>
@@ -98,11 +104,8 @@ export function PlaybackTab({
                     updateConfig({
                       use_88_key_layout: false,
                       countdown: true,
-                      release_pedal_on_start: false,
                       countdown_seconds: 3,
-                      auto_pause: true,
                       performance_optimization: false,
-                      debug_mode: false,
                     })
                   }
                 />{" "}
@@ -278,10 +281,11 @@ export function PlaybackTab({
             </div>
           ),
         )}
+        {subTab === 2 && <GlobalPlaybackSettings />}
       </TabPage>
 
       <ApplyToast
-        visible={!!playlist.loadedId && (playlist.settingsDirty || engine.configDirty)}
+        visible={subTab !== 2 && !!playlist.loadedId && (playlist.settingsDirty || engine.configDirty)}
         onApply={() => {
           void onSaveChanges();
         }}

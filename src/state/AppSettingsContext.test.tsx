@@ -75,6 +75,20 @@ describe("AppSettingsContext (Tauri mode, isTauri() = true)", () => {
     tauriMocks.isTauri.mockReturnValue(true);
   });
 
+  it("loads legacy import defaults as globals and saves only canonical application keys", async () => {
+    tauriMocks.loadAppConfig.mockResolvedValue({xk_default_settings:{release_pedal_on_start:true,auto_pause:false,debug_mode:true},auto_check_updates:false});
+    const {result}=renderHook(()=>useAppSettings(),{wrapper});
+    await waitFor(()=>expect(result.current.releasePedalOnStart).toBe(true));
+    expect(result.current.pauseAtEnd).toBe(false);
+    expect(result.current.debugOutput).toBe(true);
+    await act(async()=>result.current.setReleasePedalOnStart(false));
+    await act(async()=>result.current.setPauseAtEnd(true));
+    await act(async()=>result.current.setDebugOutput(false));
+    expect(tauriMocks.saveAppConfig.mock.calls).toEqual([
+      [{xk_global_release_pedal_on_start:false}], [{xk_global_auto_pause:true}], [{xk_global_debug_mode:false}],
+    ]);
+  });
+
   it("loads and persists the global window-focus playback policy", async () => {
     tauriMocks.loadAppConfig.mockResolvedValue({ pause_on_app_focus: false, auto_check_updates: false });
     const { result } = renderHook(() => useAppSettings(), { wrapper });

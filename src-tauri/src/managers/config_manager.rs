@@ -46,7 +46,7 @@ impl ConfigManager {
         let Ok(contents) = std::fs::read_to_string(&self.config_path) else {
             return empty_object();
         };
-        let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&contents) else {
+        let Ok(mut parsed) = serde_json::from_str::<serde_json::Value>(&contents) else {
             return empty_object();
         };
 
@@ -61,6 +61,7 @@ impl ConfigManager {
             }
         }
 
+        super::playback_preferences::migrate(&mut parsed);
         parsed
     }
 

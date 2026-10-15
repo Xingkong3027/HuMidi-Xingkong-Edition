@@ -7,7 +7,7 @@ const SAVED_CURVE = [{ time: 0, value: 0.62 }];
 const SAVED_VARIANCE = 0.05;
 
 describe("configToPatch", () => {
-  it("writes every user setting under the original config file names and nothing per-song", () => {
+  it("writes import defaults without application runtime preferences", () => {
     const patch = configToPatch({
       ...DEFAULT_CONFIG,
       midi_file: "song.mid",
@@ -24,7 +24,7 @@ describe("configToPatch", () => {
     expect(patch).not.toHaveProperty("midi_file");
     expect(patch).not.toHaveProperty("pedal_curve_on");
     expect(patch).not.toHaveProperty("pedal_curve_off");
-    expect(Object.keys(patch).sort()).toEqual(Object.values(PERSISTED_NAMES).sort());
+    expect(Object.keys(patch).sort()).toEqual(Object.values(PERSISTED_NAMES).filter(key => !["release_pedal_on_start","auto_pause","debug_mode"].includes(key)).sort());
   });
 
   it("covers every config field except the per-song ones", () => {

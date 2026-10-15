@@ -89,7 +89,7 @@ interface PlaybackEngineValue {
     onPhase?: (phase: string) => void,
   ) => Promise<PlaybackConfig>;
   preparedCacheHit: () => boolean;
-  startPrepared: (settings?: PlaybackConfig) => Promise<void>;
+  startPrepared: (settings?: PlaybackConfig, playlistPlayback?: boolean) => Promise<void>;
   midiFilePath: string;
   tracks: TrackSummary[];
   parts: TrackPart[];
@@ -1084,10 +1084,10 @@ export function PlaybackEngineProvider({ children }: { children: ReactNode }) {
       return used;
     } finally { setIsPreparing(false); }
   }
-  async function startPrepared(settings?: PlaybackConfig) {
+  async function startPrepared(settings?: PlaybackConfig, playlistPlayback = false) {
     const used = settings ?? preparedConfigRef.current ?? configRef.current;
     setIsPaused(false);
-    await invokeStartPlayback(used, preparedMidiPathRef.current);
+    await invokeStartPlayback(used, preparedMidiPathRef.current, playlistPlayback);
   }
 
   const aiStats = useMemo(
